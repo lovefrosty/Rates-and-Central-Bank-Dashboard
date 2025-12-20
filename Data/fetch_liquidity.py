@@ -1,8 +1,4 @@
-"""Policy data fetchers.
-
-Each fetcher returns a canonical ingestion object with the same structure.
-See tests in `tests/test_fetchers.py` for the required shape.
-"""
+"""Liquidity data fetchers."""
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -18,7 +14,7 @@ def _ingestion_object(value: Any = None,
                       extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     obj = {
         "value": value,
-        "status": status,  # OK | FALLBACK | FAILED
+        "status": status,
         "source": source,
         "fetched_at": _now_iso(),
         "error": error,
@@ -30,27 +26,18 @@ def _ingestion_object(value: Any = None,
 
 
 def _try_primary() -> Dict[str, Any]:
-    """Simulate primary source. Replace with real logic in ingestion agent."""
-    # Minimal deterministic placeholder: pretend primary succeeds.
-    return {"value": 5.0, "source": "primary", "status": "OK", "meta": {"provider": "primary"}}
+    return {"value": 100.0, "source": "primary", "status": "OK", "meta": {"provider": "liq_source"}}
 
 
 def _try_fallback() -> Dict[str, Any]:
-    """Simulate fallback source. Replace with real logic in ingestion agent."""
-    return {"value": 4.9, "source": "fallback", "status": "FALLBACK", "meta": {"provider": "fallback"}}
+    return {"value": 95.0, "source": "fallback", "status": "FALLBACK", "meta": {"provider": "liq_fallback"}}
 
 
-def fetch_effr() -> Dict[str, Any]:
-    """Fetch Effective Federal Funds Rate observation.
-
-    Rules:
-    - Try primary; on exception use fallback; if both fail return FAILED with value=None.
-    - Return canonical ingestion object (same schema as other fetchers).
-    """
+def fetch_rrp() -> Dict[str, Any]:
     try:
         r = _try_primary()
         return _ingestion_object(value=r.get("value"), status="OK", source=r.get("source"), extra=r.get("meta"))
-    except Exception as e:  # explicit failure handling
+    except Exception:
         try:
             r = _try_fallback()
             return _ingestion_object(value=r.get("value"), status="FALLBACK", source=r.get("source"), extra=r.get("meta"))
@@ -58,12 +45,11 @@ def fetch_effr() -> Dict[str, Any]:
             return _ingestion_object(value=None, status="FAILED", source=None, error=str(e2))
 
 
-def fetch_cpi_yoy() -> Dict[str, Any]:
-    """Fetch CPI YoY observation (placeholder)."""
+def fetch_walcl() -> Dict[str, Any]:
     try:
         r = _try_primary()
         return _ingestion_object(value=r.get("value"), status="OK", source=r.get("source"), extra=r.get("meta"))
-    except Exception as e:
+    except Exception:
         try:
             r = _try_fallback()
             return _ingestion_object(value=r.get("value"), status="FALLBACK", source=r.get("source"), extra=r.get("meta"))

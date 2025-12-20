@@ -1,0 +1,16 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+
+# Runtime outputs
+signals/raw_state.json
+Signals/daily_state.json
+
+# OS noise
+.DS_Store
