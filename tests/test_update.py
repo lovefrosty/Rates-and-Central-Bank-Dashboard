@@ -1,8 +1,7 @@
 import json
 from datetime import datetime
-from pathlib import Path
 
-import update as Update
+import update
 from update import build_raw_state, write_raw_state
 
 
@@ -29,26 +28,22 @@ def test_data_health_rules(monkeypatch):
     assert raw["meta"]["data_health"]["policy"] == "FAILED"
 
 
-def test_write_raw_state_handles_failures(tmp_path):
+def test_write_raw_state_handles_failures(tmp_path, monkeypatch):
     def _boom():
         raise RuntimeError("fail")
 
-    original = Update.fetch_vol.fetch_vix
-    Update.fetch_vol.fetch_vix = _boom
-    try:
-        path = tmp_path / "raw_state.json"
-        Update.write_raw_state(path=str(path))
-        assert path.exists()
+    monkeypatch.setattr(update.fetch_vol, "fetch_vix", _boom)
+    path = tmp_path / "raw_state.json"
+    write_raw_state(str(path))
+    assert path.exists()
 
-        data = json.loads(path.read_text())
-        assert data["volatility"]["vix"]["status"] == "FAILED"
-    finally:
-        Update.fetch_vol.fetch_vix = original
+    data = json.loads(path.read_text())
+    assert data["volatility"]["vix"]["status"] == "FAILED"
 
 
 def test_write_raw_state_includes_generated_at(tmp_path):
     path = tmp_path / "raw_state.json"
-    Update.write_raw_state(path=str(path))
+    write_raw_state(str(path))
 
     data = json.loads(path.read_text())
     generated_at = data["meta"]["generated_at"]
@@ -58,7 +53,7 @@ def test_write_raw_state_includes_generated_at(tmp_path):
 
 def test_output_is_pretty_and_stable(tmp_path):
     path = tmp_path / "raw_state.json"
-    Update.write_raw_state(path=str(path))
+    write_raw_state(str(path))
 
     content = path.read_text()
     data = json.loads(content)
