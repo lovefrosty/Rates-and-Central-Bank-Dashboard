@@ -1,0 +1,35 @@
+{
+  "timestamp": "",
+  "data_health": "OK | FALLBACK | PARTIAL",
+  "policy": {
+    "effr": null,
+    "cpi_yoy": null,
+    "real_policy_rate": null,
+    "policy_gap_bps": null,
+    "label": ""
+  },
+  "duration": {
+    "yields": {
+      "3m": null,
+      "2y": null,
+      "5y": null,
+      "10y": null
+    },
+    "slopes": {
+      "2s10s": null,
+      "3m10y": null
+    },
+    "curve_regime": ""
+  },
+  "liquidity": {
+    "rrp": null,
+    "walcl": null,
+    "effr_sofr": null,
+    "label": ""
+  },
+  "volatility": {
+    "vix": null,
+    "move": null,
+    "state": ""
+  }
+}
