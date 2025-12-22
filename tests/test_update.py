@@ -11,10 +11,26 @@ def test_write_raw_state(tmp_path):
     assert out.exists()
     j = json.loads(out.read_text())
     # top-level keys
-    for k in ["meta", "policy", "duration", "volatility", "liquidity"]:
+    for k in ["meta", "policy", "policy_witnesses", "duration", "volatility", "liquidity"]:
         assert k in j
     # data_health mapping exists
     assert "data_health" in j["meta"]
+    duration_keys = {
+        "y3m_nominal",
+        "y6m_nominal",
+        "y1y_nominal",
+        "y2y_nominal",
+        "y3y_nominal",
+        "y5y_nominal",
+        "y7y_nominal",
+        "y10_nominal",
+        "y10_real",
+        "y20y_nominal",
+        "y30y_nominal",
+    }
+    assert duration_keys.issubset(set(j["duration"].keys()))
+    liquidity_keys = {"rrp", "rrp_level", "tga_level", "walcl"}
+    assert liquidity_keys.issubset(set(j["liquidity"].keys()))
 
 
 def test_data_health_rules(monkeypatch):

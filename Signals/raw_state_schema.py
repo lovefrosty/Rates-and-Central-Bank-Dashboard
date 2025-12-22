@@ -8,9 +8,22 @@ from typing import Dict
 
 EXPECTED_SECTION_KEYS = {
     "policy": ["effr", "cpi_yoy"],
-    "duration": ["y3m_nominal", "y2y_nominal", "y10_nominal", "y10_real"],
+    "policy_witnesses": ["sofr"],
+    "duration": [
+        "y3m_nominal",
+        "y6m_nominal",
+        "y1y_nominal",
+        "y2y_nominal",
+        "y3y_nominal",
+        "y5y_nominal",
+        "y7y_nominal",
+        "y10_nominal",
+        "y10_real",
+        "y20y_nominal",
+        "y30y_nominal",
+    ],
     "volatility": ["vix", "move"],
-    "liquidity": ["rrp", "walcl"],
+    "liquidity": ["rrp", "rrp_level", "tga_level", "walcl"],
 }
 
 
@@ -37,6 +50,7 @@ def validate_raw_state(raw: Dict) -> None:
 EXPECTED_TOP_LEVEL_KEYS = {
     "meta",
     "policy",
+    "policy_witnesses",
     "duration",
     "volatility",
     "liquidity",
@@ -44,9 +58,22 @@ EXPECTED_TOP_LEVEL_KEYS = {
 
 EXPECTED_SECTION_KEYS = {
     "policy": {"effr", "cpi_yoy"},
-    "duration": {"y3m_nominal", "y2y_nominal", "y10_nominal", "y10_real"},
+    "policy_witnesses": {"sofr"},
+    "duration": {
+        "y3m_nominal",
+        "y6m_nominal",
+        "y1y_nominal",
+        "y2y_nominal",
+        "y3y_nominal",
+        "y5y_nominal",
+        "y7y_nominal",
+        "y10_nominal",
+        "y10_real",
+        "y20y_nominal",
+        "y30y_nominal",
+    },
     "volatility": {"vix", "move"},
-    "liquidity": {"rrp", "walcl"},
+    "liquidity": {"rrp", "rrp_level", "tga_level", "walcl"},
 }
 
 INGESTION_REQUIRED_FIELDS = {"status", "value", "as_of", "source"}

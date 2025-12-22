@@ -1,4 +1,4 @@
-"""Liquidity data fetchers."""
+"""Policy witness data fetchers."""
 from datetime import date, datetime, timedelta, timezone
 import os
 from typing import Any, Dict, Iterable, Optional, Tuple
@@ -102,7 +102,9 @@ def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any]]:
     return current_value, meta
 
 
-def _fetch_liquidity(series_id: str) -> Dict[str, Any]:
+def fetch_sofr() -> Dict[str, Any]:
+    """Fetch SOFR level (latest observation)."""
+    series_id = "SOFR"
     try:
         value, meta = _fetch_fred_series(series_id)
         return _ingestion_object(value=value, status="OK", source="openbb", extra=meta)
@@ -114,23 +116,3 @@ def _fetch_liquidity(series_id: str) -> Dict[str, Any]:
             error=f"{series_id} fetch failed: {exc}",
             extra={"series_id": series_id},
         )
-
-
-def fetch_rrp() -> Dict[str, Any]:
-    """Fetch RRP level (legacy key)."""
-    return _fetch_liquidity("RRPONTSYD")
-
-
-def fetch_rrp_level() -> Dict[str, Any]:
-    """Fetch RRP level (FRED: RRPONTSYD)."""
-    return _fetch_liquidity("RRPONTSYD")
-
-
-def fetch_tga_level() -> Dict[str, Any]:
-    """Fetch Treasury General Account level (FRED: WTREGEN)."""
-    return _fetch_liquidity("WTREGEN")
-
-
-def fetch_walcl() -> Dict[str, Any]:
-    """Fetch WALCL level (FRED: WALCL)."""
-    return _fetch_liquidity("WALCL")
