@@ -118,6 +118,7 @@ def write_raw_state(path: str = "signals/raw_state.json") -> None:
     from Signals.resolve_liquidity_curve import resolve_liquidity_curve
     from Signals.resolve_disagreements import resolve_disagreements
     from Signals.resolve_liquidity_curve import resolve_liquidity_curve
+    from data.fetch_policy_curve import fetch_policy_curve
     write_policy_witnesses()
     write_inflation_real_rates()
     write_volatility()
