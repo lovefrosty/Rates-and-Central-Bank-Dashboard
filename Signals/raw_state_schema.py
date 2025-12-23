@@ -51,6 +51,7 @@ EXPECTED_TOP_LEVEL_KEYS = {
     "meta",
     "policy",
     "policy_witnesses",
+    "policy_curve",   # ← ADDED
     "duration",
     "volatility",
     "liquidity",
@@ -59,6 +60,7 @@ EXPECTED_TOP_LEVEL_KEYS = {
 EXPECTED_SECTION_KEYS = {
     "policy": {"effr", "cpi_yoy"},
     "policy_witnesses": {"sofr"},
+    "policy_curve": {"curve"},
     "duration": {
         "y3m_nominal",
         "y6m_nominal",
