@@ -77,6 +77,10 @@ def build_raw_state() -> Dict:
         "sofr": _safe_call(fetch_policy_witnesses.fetch_sofr),
     }
 
+    policy_curve = {
+        "curve": _safe_call(fetch_policy_curve.fetch_policy_curve),
+    }
+
     raw = {
         "meta": {
             "generated_at": _now_iso(),
@@ -89,6 +93,7 @@ def build_raw_state() -> Dict:
         },
         "policy": policy,
         "policy_witnesses": policy_witnesses,
+        "policy_curve": policy_curve,  # ← APPEND HERE
         "duration": duration,
         "volatility": volatility,
         "liquidity": liquidity,
