@@ -1,24 +1,25 @@
-"""Policy data fetchers.
+"""Policy data fetchers."""
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, Iterable, Optional, Tuple
 
-Each fetcher returns a canonical ingestion object with the same structure.
-See tests in `tests/test_fetchers.py` for the required shape.
-"""
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from Data.utils.fred_provider import _try_fred_http, _try_openbb_fred
+from Data.utils.snapshot_selection import select_prior, select_snapshots
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _ingestion_object(value: Any = None,
-                      status: str = "FAILED",
-                      source: Optional[str] = None,
-                      error: Optional[str] = None,
-                      extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _ingestion_object(
+    value: Any = None,
+    status: str = "FAILED",
+    source: Optional[str] = None,
+    error: Optional[str] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     obj = {
         "value": value,
-        "status": status,  # OK | FALLBACK | FAILED
+        "status": status,  # OK | FAILED
         "source": source,
         "fetched_at": _now_iso(),
         "error": error,
@@ -29,43 +30,105 @@ def _ingestion_object(value: Any = None,
     return obj
 
 
-def _try_primary() -> Dict[str, Any]:
-    """Simulate primary source. Replace with real logic in ingestion agent."""
-    # Minimal deterministic placeholder: pretend primary succeeds.
-    return {"value": 5.0, "source": "primary", "status": "OK", "meta": {"provider": "primary"}}
+def _normalize_date(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
 
 
-def _try_fallback() -> Dict[str, Any]:
-    """Simulate fallback source. Replace with real logic in ingestion agent."""
-    return {"value": 4.9, "source": "fallback", "status": "FALLBACK", "meta": {"provider": "fallback"}}
+def _extract_points(results: Iterable[Any]) -> list[Tuple[datetime, float]]:
+    points: list[Tuple[datetime, float]] = []
+    for item in results:
+        if isinstance(item, dict):
+            raw_date = item.get("date")
+            raw_value = item.get("value")
+        else:
+            raw_date = getattr(item, "date", None)
+            raw_value = getattr(item, "value", None)
+        dt = _normalize_date(raw_date)
+        if dt is None or raw_value is None:
+            continue
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        points.append((dt, value))
+    return points
+
+
+def _format_date(dt: Optional[datetime]) -> Optional[str]:
+    if dt is None:
+        return None
+    return dt.date().isoformat()
+
+
+def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]:
+    start_date = (datetime.now(timezone.utc) - timedelta(days=400)).date().isoformat()
+    try:
+        df = _try_openbb_fred(series_id, start_date=start_date)
+        status = "OK"
+        source = "openbb:fred"
+    except Exception as openbb_exc:
+        try:
+            df = _try_fred_http(series_id, start_date=start_date)
+            status = "OK"
+            source = "fred_http"
+        except Exception as fred_exc:
+            raise RuntimeError(f"OpenBB failed: {openbb_exc}; FRED HTTP failed: {fred_exc}") from fred_exc
+
+    points = _extract_points(df.to_dict("records"))
+    snapshots = select_snapshots(points)
+    current = snapshots["current"]
+    if current is None:
+        raise ValueError("no observations")
+    current_date, current_value = current
+    last_week = snapshots["last_week"]
+    start_of_year = snapshots["start_of_year"]
+    month_ago = select_prior(points, current_date, days=30)
+    change_1m = None if month_ago is None else current_value - month_ago[1]
+    roc_5d = None
+    if last_week is not None and last_week[1] not in (None, 0):
+        roc_5d = (current_value - last_week[1]) / last_week[1] * 100
+    meta = {
+        "series_id": series_id,
+        "start_of_year": None if start_of_year is None else start_of_year[1],
+        "last_week": None if last_week is None else last_week[1],
+        "current": current_value,
+        "1m_change": change_1m,
+        "5d_roc": roc_5d,
+        "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
+        "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
+        "as_of_current": _format_date(current_date),
+    }
+    return current_value, meta, status, source
+
+
+def _fetch_policy(series_id: str) -> Dict[str, Any]:
+    try:
+        value, meta, status, source = _fetch_fred_series(series_id)
+        return _ingestion_object(value=value, status=status, source=source, extra=meta)
+    except Exception as exc:
+        return _ingestion_object(
+            value=None,
+            status="FAILED",
+            source=None,
+            error=f"{series_id} fetch failed: {exc}",
+            extra={"series_id": series_id},
+        )
 
 
 def fetch_effr() -> Dict[str, Any]:
-    """Fetch Effective Federal Funds Rate observation.
-
-    Rules:
-    - Try primary; on exception use fallback; if both fail return FAILED with value=None.
-    - Return canonical ingestion object (same schema as other fetchers).
-    """
-    try:
-        r = _try_primary()
-        return _ingestion_object(value=r.get("value"), status="OK", source=r.get("source"), extra=r.get("meta"))
-    except Exception as e:  # explicit failure handling
-        try:
-            r = _try_fallback()
-            return _ingestion_object(value=r.get("value"), status="FALLBACK", source=r.get("source"), extra=r.get("meta"))
-        except Exception as e2:
-            return _ingestion_object(value=None, status="FAILED", source=None, error=str(e2))
+    """Fetch Effective Federal Funds Rate (FRED: EFFR)."""
+    return _fetch_policy("EFFR")
 
 
 def fetch_cpi_yoy() -> Dict[str, Any]:
-    """Fetch CPI YoY observation (placeholder)."""
-    try:
-        r = _try_primary()
-        return _ingestion_object(value=r.get("value"), status="OK", source=r.get("source"), extra=r.get("meta"))
-    except Exception as e:
-        try:
-            r = _try_fallback()
-            return _ingestion_object(value=r.get("value"), status="FALLBACK", source=r.get("source"), extra=r.get("meta"))
-        except Exception as e2:
-            return _ingestion_object(value=None, status="FAILED", source=None, error=str(e2))
+    """Fetch CPI level (deprecated name; use fetch_inflation.fetch_cpi_level)."""
+    return _fetch_policy("CPIAUCSL")

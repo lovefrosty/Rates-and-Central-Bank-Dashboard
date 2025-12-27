@@ -11,29 +11,24 @@ if str(_ROOT) not in sys.path:
 from Signals.resolve_yield_curve import resolve_yield_curve
 
 
-def _ingestion(value):
-    return {"status": "OK", "value": value, "as_of": "2024-01-01", "source": "test"}
-
-
-def _raw_state(y3m, y2y, y10y):
+def _daily_state(y3m, y2y, y10y):
     return {
-        "meta": {"generated_at": "2024-01-01T00:00:00Z"},
-        "duration": {
-            "y3m_nominal": _ingestion(y3m),
-            "y2y_nominal": _ingestion(y2y),
-            "y10_nominal": _ingestion(y10y),
-        },
+        "yield_curve": {
+            "tenors": ["3M", "2Y", "10Y"],
+            "lines": {"current": [y3m, y2y, y10y]},
+            "table_rows": [],
+        }
     }
 
 
-def _write_raw_state(path: Path, raw_state: dict) -> None:
-    path.write_text(json.dumps(raw_state), encoding="utf-8")
+def _write_daily_state(path: Path, daily_state: dict) -> None:
+    path.write_text(json.dumps(daily_state), encoding="utf-8")
 
 
 def _run_resolver(tmp_path, y3m, y2y, y10y):
-    raw_path = tmp_path / "raw_state.json"
     daily_path = tmp_path / "daily_state.json"
-    _write_raw_state(raw_path, _raw_state(y3m, y2y, y10y))
+    _write_daily_state(daily_path, _daily_state(y3m, y2y, y10y))
+    raw_path = tmp_path / "missing_raw_state.json"
     return resolve_yield_curve(raw_state_path=raw_path, daily_state_path=daily_path)
 
 
@@ -54,4 +49,12 @@ def test_regime_steep(tmp_path):
 
 def test_regime_normal(tmp_path):
     data = _run_resolver(tmp_path, 3.0, 3.2, 3.6)
+    assert data["yield_curve"]["regime"] == "NORMAL"
+
+
+def test_resolver_does_not_read_raw_state(tmp_path):
+    daily_path = tmp_path / "daily_state.json"
+    _write_daily_state(daily_path, _daily_state(3.0, 3.2, 3.6))
+    raw_path = tmp_path / "missing_raw_state.json"
+    data = resolve_yield_curve(raw_state_path=raw_path, daily_state_path=daily_path)
     assert data["yield_curve"]["regime"] == "NORMAL"

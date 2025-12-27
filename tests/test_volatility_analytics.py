@@ -3,10 +3,18 @@ import json
 from Analytics.volatility_analytics import build_volatility_block, write_daily_state
 
 
-def _entry(value, status="OK", roc=None):
+def _entry(value, status="OK", roc=None, change_1d=None, change_5d=None, change_1m=None, change_6m=None):
     meta = {}
     if roc is not None:
         meta["5d_roc"] = roc
+    if change_1d is not None:
+        meta["1d_change_pct"] = change_1d
+    if change_5d is not None:
+        meta["5d_change_pct"] = change_5d
+    if change_1m is not None:
+        meta["1m_change_pct"] = change_1m
+    if change_6m is not None:
+        meta["6m_change_pct"] = change_6m
     return {
         "value": value,
         "status": status,
@@ -25,10 +33,23 @@ def test_writer_creates_block(tmp_path):
 
 
 def test_values_propagate():
-    raw = {"volatility": {"vix": _entry(18.0), "move": _entry(95.0)}}
+    raw = {
+        "volatility": {
+            "vix": _entry(18.0, change_1d=1.0, change_5d=2.0, change_1m=3.0, change_6m=4.0),
+            "move": _entry(95.0, change_1d=-1.0),
+            "gvz": _entry(14.0),
+            "ovx": _entry(28.0),
+        }
+    }
     out = build_volatility_block(raw)
     assert out["vix"] == 18.0
     assert out["move"] == 95.0
+    assert out["vix_move_ratio"] == 18.0 / 95.0
+    assert out["move_vix_ratio"] == 95.0 / 18.0
+    assert out["gvz_vix_ratio"] == 14.0 / 18.0
+    assert out["ovx_vix_ratio"] == 28.0 / 18.0
+    assert out["changes_pct"]["vix"]["1d_pct"] == 1.0
+    assert out["changes_pct"]["vix"]["5d_pct"] == 2.0
 
 
 def test_stress_origin_read_mapping():
@@ -52,3 +73,4 @@ def test_missing_inputs_handled():
     assert out["move"] is None
     assert out["data_quality"]["vix"] == "FAILED"
     assert out["data_quality"]["move"] is None
+    assert out["data_quality"]["gvz"] is None

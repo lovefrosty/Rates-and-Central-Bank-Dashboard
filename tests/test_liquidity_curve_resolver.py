@@ -7,11 +7,10 @@ from Signals.resolve_liquidity_curve import resolve_liquidity_curve
 
 def _daily_state(rrp_change=None, tga_change=None, rrp_level=None, tga_level=None):
     return {
-        "liquidity": {
-            "rrp_level": rrp_level,
-            "rrp_1m_change": rrp_change,
-            "tga_level": tga_level,
-            "tga_1m_change": tga_change,
+        "liquidity_analytics": {
+            "rrp": {"level": rrp_level, "change_1w": rrp_change, "change_ytd": None},
+            "tga": {"level": tga_level, "change_1w": tga_change, "change_ytd": None},
+            "data_quality": {},
         }
     }
 

@@ -5,10 +5,25 @@ data_health summary. Must not interpret values.
 """
 from datetime import datetime, timezone
 import json
-from typing import Dict
+from typing import Dict, List
 import os
+from pathlib import Path
 
-from Data import fetch_policy, fetch_policy_witnesses, fetch_yields, fetch_vol, fetch_liquidity
+from Data import (
+    fetch_credit_spreads,
+    fetch_global_policy,
+    fetch_inflation,
+    fetch_inflation_witnesses,
+    fetch_labor_market,
+    fetch_liquidity,
+    fetch_policy,
+    fetch_policy_witnesses,
+    fetch_policy_futures,
+    fetch_policy_curve,
+    fetch_vol,
+    fetch_yields,
+)
+from Signals import state_paths
 from Signals.validate import validate_raw_state
 
 
@@ -40,10 +55,23 @@ def compute_data_health(category: Dict[str, Dict]) -> str:
     return "PARTIAL"
 
 
+def _load_zq_contracts(path: Path | str = Path("config/zq_contracts.json")) -> List[str]:
+    config_path = Path(path)
+    if not config_path.exists():
+        return []
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, str) and item.strip()]
+
+
 def build_raw_state() -> Dict:
     policy = {
         "effr": _safe_call(fetch_policy.fetch_effr),
-        "cpi_yoy": _safe_call(fetch_policy.fetch_cpi_yoy),
+        "cpi_level": _safe_call(fetch_inflation.fetch_cpi_level),
     }
 
     duration = {
@@ -63,6 +91,8 @@ def build_raw_state() -> Dict:
     volatility = {
         "vix": _safe_call(fetch_vol.fetch_vix),
         "move": _safe_call(fetch_vol.fetch_move),
+        "gvz": _safe_call(fetch_vol.fetch_gvz),
+        "ovx": _safe_call(fetch_vol.fetch_ovx),
     }
 
     liquidity = {
@@ -75,6 +105,42 @@ def build_raw_state() -> Dict:
     policy_witnesses = {
         # Parallel addition: policy_witnesses
         "sofr": _safe_call(fetch_policy_witnesses.fetch_sofr),
+    }
+
+    zq_contracts = _load_zq_contracts()
+    policy_futures = {
+        # Parallel addition: policy_futures
+        "zq": {
+            ticker: _safe_call(lambda t=ticker: fetch_policy_futures.fetch_zq_contract(t))
+            for ticker in zq_contracts
+        }
+    }
+
+    inflation_witnesses = {
+        # Parallel addition: inflation_witnesses
+        "cpi_headline": _safe_call(fetch_inflation_witnesses.fetch_cpi_headline),
+        "cpi_core": _safe_call(fetch_inflation_witnesses.fetch_cpi_core),
+    }
+
+    labor_market = {
+        # Parallel addition: labor_market
+        "unrate": _safe_call(fetch_labor_market.fetch_unrate),
+        "jolts_openings": _safe_call(fetch_labor_market.fetch_jolts_openings),
+        "eci": _safe_call(fetch_labor_market.fetch_eci_index),
+    }
+
+    credit_spreads = {
+        # Parallel addition: credit_spreads
+        "ig_oas": _safe_call(fetch_credit_spreads.fetch_ig_oas),
+        "hy_oas": _safe_call(fetch_credit_spreads.fetch_hy_oas),
+    }
+
+    global_policy = {
+        # Parallel addition: global_policy
+        "ecb_deposit_rate": _safe_call(fetch_global_policy.fetch_ecb_deposit_rate),
+        "usd_index": _safe_call(fetch_global_policy.fetch_usd_index),
+        "dxy": _safe_call(fetch_global_policy.fetch_dxy),
+        "boj_stance": _safe_call(fetch_global_policy.fetch_boj_stance_manual),
     }
 
     policy_curve = {
@@ -92,7 +158,12 @@ def build_raw_state() -> Dict:
             },
         },
         "policy": policy,
+        "policy_futures": policy_futures,
         "policy_witnesses": policy_witnesses,
+        "inflation_witnesses": inflation_witnesses,
+        "labor_market": labor_market,
+        "credit_spreads": credit_spreads,
+        "global_policy": global_policy,
         "policy_curve": policy_curve,  # ← APPEND HERE
         "duration": duration,
         "volatility": volatility,
@@ -104,8 +175,9 @@ def build_raw_state() -> Dict:
     return raw
 
 
-def write_raw_state(path: str = "signals/raw_state.json") -> None:
+def write_raw_state(path: str | os.PathLike = state_paths.RAW_STATE_PATH) -> None:
     raw = build_raw_state()
+    path = os.fspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         json.dump(raw, f, indent=2, sort_keys=True)
@@ -113,21 +185,34 @@ def write_raw_state(path: str = "signals/raw_state.json") -> None:
     from Analytics.inflation_real_rates import write_daily_state as write_inflation_real_rates
     from Analytics.volatility_analytics import write_daily_state as write_volatility
     from Analytics.liquidity_analytics import write_daily_state as write_liquidity_analytics
+    from Analytics.yield_curve_analytics import write_daily_state as write_yield_curve
+    from Analytics.inflation_level import write_daily_state as write_inflation_level
+    from Analytics.inflation_witnesses import write_daily_state as write_inflation_witnesses
+    from Analytics.labor_market import write_daily_state as write_labor_market
+    from Analytics.credit_transmission import write_daily_state as write_credit_transmission
+    from Analytics.global_policy_alignment import write_daily_state as write_global_policy_alignment
+    from Analytics.policy_futures_curve import write_daily_state as write_policy_futures_curve
     from Signals.resolve_policy import resolve_policy as resolve_policy_spot
     from Signals.resolve_policy_curve import resolve_policy_curve
     from Signals.resolve_liquidity_curve import resolve_liquidity_curve
     from Signals.resolve_disagreements import resolve_disagreements
-    from Signals.resolve_liquidity_curve import resolve_liquidity_curve
-    from data.fetch_policy_curve import fetch_policy_curve
+    from Signals.resolve_vol_credit_cross import resolve_vol_credit_cross
     write_policy_witnesses()
     write_inflation_real_rates()
     write_volatility()
     write_liquidity_analytics()
+    write_yield_curve()
+    write_inflation_level()
+    write_inflation_witnesses()
+    write_labor_market()
+    write_credit_transmission()
+    write_global_policy_alignment()
+    write_policy_futures_curve()
     resolve_policy_spot()
     resolve_policy_curve()
     resolve_liquidity_curve()
     resolve_disagreements()
-    resolve_liquidity_curve()
+    resolve_vol_credit_cross()
 
 
 if __name__ == "__main__":

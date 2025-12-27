@@ -1,5 +1,5 @@
 """Snapshot selection helper for ingestion meta."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 
@@ -28,3 +28,16 @@ def select_snapshots(
         "last_week": last_week,
         "start_of_year": start_of_year,
     }
+
+
+def select_prior(
+    points: list[Tuple[datetime, float]],
+    current_date: datetime,
+    days: int,
+) -> Snapshot:
+    """Select the latest observation at or before current_date - days."""
+    target = current_date - timedelta(days=days)
+    candidates = [pair for pair in points if pair[0] <= target]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda pair: pair[0])

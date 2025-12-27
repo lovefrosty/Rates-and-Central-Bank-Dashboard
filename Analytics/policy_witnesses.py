@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 from typing import Any, Dict
 
+from Signals import state_paths
+
 
 def _get_current(entry: Dict[str, Any]) -> Any:
     if not isinstance(entry, dict):
@@ -37,12 +39,17 @@ def build_policy_witnesses(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def write_daily_state(
-    raw_state_path: Path | str = Path("signals/raw_state.json"),
-    daily_state_path: Path | str = Path("signals/daily_state.json"),
+    raw_state_path: Path | str = state_paths.RAW_STATE_PATH,
+    daily_state_path: Path | str = state_paths.DAILY_STATE_PATH,
 ) -> Dict[str, Any]:
     raw_state = json.loads(Path(raw_state_path).read_text(encoding="utf-8"))
     daily_path = Path(daily_state_path)
-    daily = {"policy_witnesses": build_policy_witnesses(raw_state)}
+    daily = {}
+    if daily_path.exists():
+        daily = json.loads(daily_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(daily, dict):
+            daily = {}
+    daily["policy_witnesses"] = build_policy_witnesses(raw_state)
     daily_path.parent.mkdir(parents=True, exist_ok=True)
     daily_path.write_text(json.dumps(daily, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return daily

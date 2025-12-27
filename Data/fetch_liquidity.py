@@ -1,9 +1,9 @@
 """Liquidity data fetchers."""
 from datetime import date, datetime, timedelta, timezone
-import os
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-from Data.utils.snapshot_selection import select_snapshots
+from Data.utils.fred_provider import _try_fred_http, _try_openbb_fred
+from Data.utils.snapshot_selection import select_prior, select_snapshots
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -68,21 +68,21 @@ def _format_date(dt: Optional[datetime]) -> Optional[str]:
     return dt.date().isoformat()
 
 
-def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any]]:
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        raise RuntimeError("OpenBB disabled in tests")
-    try:
-        from openbb import obb
-    except ImportError as exc:
-        raise RuntimeError("OpenBB not installed") from exc
+def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]:
     start_date = (datetime.now(timezone.utc) - timedelta(days=400)).date().isoformat()
-    data = obb.economy.fred_series(symbol=series_id, start_date=start_date, provider="fred")
-    results = getattr(data, "results", None)
-    if results is None and isinstance(data, dict):
-        results = data.get("results")
-    if results is None:
-        raise ValueError("missing results from OpenBB")
-    points = _extract_points(results)
+    try:
+        df = _try_openbb_fred(series_id, start_date=start_date)
+        status = "OK"
+        source = "openbb:fred"
+    except Exception as openbb_exc:
+        try:
+            df = _try_fred_http(series_id, start_date=start_date)
+            status = "OK"
+            source = "fred_http"
+        except Exception as fred_exc:
+            raise RuntimeError(f"OpenBB failed: {openbb_exc}; FRED HTTP failed: {fred_exc}") from fred_exc
+
+    points = _extract_points(df.to_dict("records"))
     snapshots = select_snapshots(points)
     current = snapshots["current"]
     if current is None:
@@ -90,22 +90,29 @@ def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any]]:
     current_date, current_value = current
     last_week = snapshots["last_week"]
     start_of_year = snapshots["start_of_year"]
+    month_ago = select_prior(points, current_date, days=30)
+    change_1m = None if month_ago is None else current_value - month_ago[1]
+    roc_5d = None
+    if last_week is not None and last_week[1] not in (None, 0):
+        roc_5d = (current_value - last_week[1]) / last_week[1] * 100
     meta = {
         "series_id": series_id,
         "start_of_year": None if start_of_year is None else start_of_year[1],
         "last_week": None if last_week is None else last_week[1],
         "current": current_value,
+        "1m_change": change_1m,
+        "5d_roc": roc_5d,
         "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
         "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
         "as_of_current": _format_date(current_date),
     }
-    return current_value, meta
+    return current_value, meta, status, source
 
 
 def _fetch_liquidity(series_id: str) -> Dict[str, Any]:
     try:
-        value, meta = _fetch_fred_series(series_id)
-        return _ingestion_object(value=value, status="OK", source="openbb", extra=meta)
+        value, meta, status, source = _fetch_fred_series(series_id)
+        return _ingestion_object(value=value, status=status, source=source, extra=meta)
     except Exception as exc:
         return _ingestion_object(
             value=None,

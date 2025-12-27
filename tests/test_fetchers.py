@@ -2,23 +2,68 @@ from datetime import datetime
 
 import pytest
 
-from Data import fetch_policy, fetch_policy_witnesses, fetch_yields, fetch_vol, fetch_liquidity
+from Data import (
+    fetch_credit_spreads,
+    fetch_global_policy,
+    fetch_inflation,
+    fetch_inflation_witnesses,
+    fetch_labor_market,
+    fetch_liquidity,
+    fetch_policy,
+    fetch_policy_witnesses,
+    fetch_vol,
+    fetch_yields,
+)
 from Data.utils.snapshot_selection import select_snapshots
 
 
 REQUIRED_KEYS = {"value", "status", "source", "fetched_at", "error", "meta"}
 
 
+@pytest.fixture(autouse=True)
+def _patch_fred_fetchers(monkeypatch):
+    def _ok(series_id):
+        return 1.0, {
+            "series_id": series_id,
+            "start_of_year": 0.9,
+            "last_week": 0.95,
+            "current": 1.0,
+            "as_of_start_of_year": "2024-01-02",
+            "as_of_last_week": "2024-12-20",
+            "as_of_current": "2024-12-27",
+        }, "OK", "openbb:fred"
+
+    for module in (
+        fetch_policy,
+        fetch_inflation,
+        fetch_policy_witnesses,
+        fetch_yields,
+        fetch_liquidity,
+        fetch_vol,
+        fetch_credit_spreads,
+        fetch_labor_market,
+        fetch_global_policy,
+        fetch_inflation_witnesses,
+    ):
+        if hasattr(module, "_fetch_fred_series"):
+            monkeypatch.setattr(module, "_fetch_fred_series", _ok)
+
+
 def assert_ingestion_shape(obj):
     assert isinstance(obj, dict)
     assert REQUIRED_KEYS.issubset(set(obj.keys()))
-    assert obj["status"] in {"OK", "FALLBACK", "FAILED"}
+    assert obj["status"] in {"OK", "FAILED"}
 
 
 def test_policy_fetchers_shape():
     assert_ingestion_shape(fetch_policy.fetch_effr())
-    assert_ingestion_shape(fetch_policy.fetch_cpi_yoy())
+    assert_ingestion_shape(fetch_inflation.fetch_cpi_level())
     assert_ingestion_shape(fetch_policy_witnesses.fetch_sofr())
+
+
+def test_inflation_witness_fetchers_shape():
+    assert_ingestion_shape(fetch_inflation_witnesses.fetch_cpi_headline())
+    assert_ingestion_shape(fetch_inflation_witnesses.fetch_cpi_core())
 
 
 def test_yields_fetchers_shape():
@@ -39,6 +84,8 @@ def test_yields_fetchers_shape():
 def test_vol_fetchers_shape():
     assert_ingestion_shape(fetch_vol.fetch_vix())
     assert_ingestion_shape(fetch_vol.fetch_move())
+    assert_ingestion_shape(fetch_vol.fetch_gvz())
+    assert_ingestion_shape(fetch_vol.fetch_ovx())
 
 
 def test_liquidity_fetchers_shape():
@@ -48,15 +95,32 @@ def test_liquidity_fetchers_shape():
     assert_ingestion_shape(fetch_liquidity.fetch_walcl())
 
 
-def test_primary_failure_uses_fallback(monkeypatch):
-    # Force primary to throw for effr, fallback should be used and status==FALLBACK
-    def _boom():
-        raise RuntimeError("primary down")
+def test_labor_fetchers_shape():
+    assert_ingestion_shape(fetch_labor_market.fetch_unrate())
+    assert_ingestion_shape(fetch_labor_market.fetch_jolts_openings())
+    assert_ingestion_shape(fetch_labor_market.fetch_eci_index())
 
-    monkeypatch.setattr(fetch_policy, "_try_primary", _boom)
+
+def test_credit_spreads_fetchers_shape():
+    assert_ingestion_shape(fetch_credit_spreads.fetch_ig_oas())
+    assert_ingestion_shape(fetch_credit_spreads.fetch_hy_oas())
+
+
+def test_global_policy_fetchers_shape():
+    assert_ingestion_shape(fetch_global_policy.fetch_ecb_deposit_rate())
+    assert_ingestion_shape(fetch_global_policy.fetch_usd_index())
+    assert_ingestion_shape(fetch_global_policy.fetch_dxy())
+    assert_ingestion_shape(fetch_global_policy.fetch_boj_stance_manual())
+
+
+def test_policy_fetcher_failure_returns_failed(monkeypatch):
+    def _boom(series_id):
+        raise RuntimeError("no data")
+
+    monkeypatch.setattr(fetch_policy, "_fetch_fred_series", _boom)
     res = fetch_policy.fetch_effr()
     assert_ingestion_shape(res)
-    assert res["status"] in {"FALLBACK", "FAILED"}
+    assert res["status"] == "FAILED"
 
 
 def test_yield_fetcher_failure_returns_failed(monkeypatch):
@@ -76,6 +140,17 @@ def test_policy_witness_failure_returns_failed(monkeypatch):
 
     monkeypatch.setattr(fetch_policy_witnesses, "_fetch_fred_series", _boom)
     res = fetch_policy_witnesses.fetch_sofr()
+    assert_ingestion_shape(res)
+    assert res["status"] == "FAILED"
+    assert res["value"] is None
+
+
+def test_inflation_fetcher_failure_returns_failed(monkeypatch):
+    def _boom(series_id):
+        raise RuntimeError("no data")
+
+    monkeypatch.setattr(fetch_inflation, "_fetch_fred_series", _boom)
+    res = fetch_inflation.fetch_cpi_level()
     assert_ingestion_shape(res)
     assert res["status"] == "FAILED"
     assert res["value"] is None

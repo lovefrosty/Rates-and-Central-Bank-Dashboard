@@ -1,8 +1,51 @@
 import json
 from datetime import datetime
 
+import pytest
+
 import update
+from Data import (
+    fetch_credit_spreads,
+    fetch_global_policy,
+    fetch_inflation,
+    fetch_inflation_witnesses,
+    fetch_labor_market,
+    fetch_liquidity,
+    fetch_policy,
+    fetch_policy_witnesses,
+    fetch_vol,
+    fetch_yields,
+)
 from update import build_raw_state, write_raw_state
+
+
+@pytest.fixture(autouse=True)
+def _patch_fred_fetchers(monkeypatch):
+    def _ok(series_id):
+        return 1.0, {
+            "series_id": series_id,
+            "start_of_year": 0.9,
+            "last_week": 0.95,
+            "current": 1.0,
+            "as_of_start_of_year": "2024-01-02",
+            "as_of_last_week": "2024-12-20",
+            "as_of_current": "2024-12-27",
+        }, "OK", "openbb:fred"
+
+    for module in (
+        fetch_policy,
+        fetch_inflation,
+        fetch_policy_witnesses,
+        fetch_yields,
+        fetch_liquidity,
+        fetch_vol,
+        fetch_credit_spreads,
+        fetch_labor_market,
+        fetch_global_policy,
+        fetch_inflation_witnesses,
+    ):
+        if hasattr(module, "_fetch_fred_series"):
+            monkeypatch.setattr(module, "_fetch_fred_series", _ok)
 
 
 def test_write_raw_state(tmp_path):
@@ -11,7 +54,20 @@ def test_write_raw_state(tmp_path):
     assert out.exists()
     j = json.loads(out.read_text())
     # top-level keys
-    for k in ["meta", "policy", "policy_witnesses", "duration", "volatility", "liquidity"]:
+    for k in [
+        "meta",
+        "policy",
+        "policy_futures",
+        "policy_witnesses",
+        "inflation_witnesses",
+        "labor_market",
+        "credit_spreads",
+        "global_policy",
+        "policy_curve",
+        "duration",
+        "volatility",
+        "liquidity",
+    ]:
         assert k in j
     # data_health mapping exists
     assert "data_health" in j["meta"]
@@ -31,6 +87,12 @@ def test_write_raw_state(tmp_path):
     assert duration_keys.issubset(set(j["duration"].keys()))
     liquidity_keys = {"rrp", "rrp_level", "tga_level", "walcl"}
     assert liquidity_keys.issubset(set(j["liquidity"].keys()))
+    credit_spreads_keys = {"ig_oas", "hy_oas"}
+    assert credit_spreads_keys.issubset(set(j["credit_spreads"].keys()))
+    global_policy_keys = {"ecb_deposit_rate", "usd_index", "dxy", "boj_stance"}
+    assert global_policy_keys.issubset(set(j["global_policy"].keys()))
+    volatility_keys = {"vix", "move", "gvz", "ovx"}
+    assert volatility_keys.issubset(set(j["volatility"].keys()))
 
 
 def test_data_health_rules(monkeypatch):
@@ -39,7 +101,7 @@ def test_data_health_rules(monkeypatch):
         return {"value": None, "status": "FAILED", "source": None, "fetched_at": "now", "error": "err", "meta": {}}
 
     monkeypatch.setattr("Data.fetch_policy.fetch_effr", failed)
-    monkeypatch.setattr("Data.fetch_policy.fetch_cpi_yoy", failed)
+    monkeypatch.setattr("Data.fetch_inflation.fetch_cpi_level", failed)
     raw = build_raw_state()
     assert raw["meta"]["data_health"]["policy"] == "FAILED"
 

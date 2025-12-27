@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 from typing import Any, Dict, Optional
 
+from Signals import state_paths
+
 
 def _get_block(daily_state: Dict[str, Any], key: str) -> Dict[str, Any]:
     block = daily_state.get(key, {})
@@ -14,15 +16,12 @@ def _get_value(block: Dict[str, Any], key: str) -> Optional[float]:
     return None if value is None else float(value)
 
 
-def _get_metric(daily_state: Dict[str, Any], key: str) -> Optional[float]:
-    if key in daily_state:
-        value = daily_state.get(key)
-        return None if value is None else float(value)
-    for block_key in ("liquidity", "liquidity_metrics", "liquidity_analytics", "policy_witnesses"):
-        block = _get_block(daily_state, block_key)
-        if key in block:
-            return _get_value(block, key)
-    return None
+def _get_liquidity_metric(daily_state: Dict[str, Any], series: str, key: str) -> Optional[float]:
+    analytics = _get_block(daily_state, "liquidity_analytics")
+    series_block = analytics.get(series, {}) if isinstance(analytics, dict) else {}
+    if not isinstance(series_block, dict):
+        return None
+    return _get_value(series_block, key)
 
 
 def _expected_liquidity(rrp_change: Optional[float]) -> str:
@@ -59,7 +58,7 @@ def _explanation(
     if rrp_change is None:
         if rrp_level is not None:
             parts.append(
-                f"RRP balances are {rrp_level:.1f}, but the 1m change is unavailable, so the liquidity read defaults to neutral."
+                f"RRP balances are {rrp_level:.1f}, but the weekly change is unavailable, so the liquidity read defaults to neutral."
             )
         else:
             parts.append("RRP change data is unavailable, so the liquidity read defaults to neutral.")
@@ -79,7 +78,7 @@ def _explanation(
         else:
             parts.append("Treasury cash balances are flat and do not reinforce the signal.")
     elif tga_level is not None:
-        parts.append("Treasury cash level is available, but the 1m change is unavailable.")
+        parts.append("Treasury cash level is available, but the weekly change is unavailable.")
 
     if missing_any:
         parts.append("Some liquidity inputs are missing, so the read is less complete.")
@@ -88,14 +87,14 @@ def _explanation(
     return " ".join(parts)
 
 
-def resolve_liquidity_curve(daily_state_path: Path | str = Path("signals/daily_state.json")) -> Dict[str, Any]:
+def resolve_liquidity_curve(daily_state_path: Path | str = state_paths.DAILY_STATE_PATH) -> Dict[str, Any]:
     path = Path(daily_state_path)
     daily_state = json.loads(path.read_text(encoding="utf-8"))
 
-    rrp_level = _get_metric(daily_state, "rrp_level")
-    rrp_change = _get_metric(daily_state, "rrp_1m_change")
-    tga_level = _get_metric(daily_state, "tga_level")
-    tga_change = _get_metric(daily_state, "tga_1m_change")
+    rrp_level = _get_liquidity_metric(daily_state, "rrp", "level")
+    rrp_change = _get_liquidity_metric(daily_state, "rrp", "change_1w")
+    tga_level = _get_liquidity_metric(daily_state, "tga", "level")
+    tga_change = _get_liquidity_metric(daily_state, "tga", "change_1w")
 
     expected = _expected_liquidity(rrp_change)
     inputs_used = _inputs_used(rrp_change, rrp_level, tga_change, tga_level)

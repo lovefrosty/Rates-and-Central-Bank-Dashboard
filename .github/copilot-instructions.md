@@ -37,7 +37,7 @@ Acceptance tests & behavioural expectations (must pass)
 - `signals/raw_state.json` is always written (human-readable JSON, use `indent=2` to be diff-friendly).
 - A lightweight `meta.data_health` summary must be present with top-level categories mapped to one of `OK | PARTIAL | FAILED` using mechanical rules:
   - OK = all sub-fields OK
-  - PARTIAL = any combination of OK/FALLBACK/FAILED
+  - PARTIAL = any combination of OK/FAILED
   - FAILED = all FAILED
 - Implement minimal tests (e.g., `tests/test_update.py`) validating the above behaviours (writing file, data_health rules, schema presence). Use plain `pytest`.
 

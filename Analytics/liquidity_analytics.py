@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 from typing import Any, Dict, Optional, Tuple
 
+from Signals import state_paths
+
 
 def _get_entry(raw_state: Dict[str, Any], key: str) -> Dict[str, Any]:
     container = raw_state.get("liquidity", {})
@@ -66,8 +68,8 @@ def build_liquidity_analytics(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def write_daily_state(
-    raw_state_path: Path | str = Path("signals/raw_state.json"),
-    daily_state_path: Path | str = Path("signals/daily_state.json"),
+    raw_state_path: Path | str = state_paths.RAW_STATE_PATH,
+    daily_state_path: Path | str = state_paths.DAILY_STATE_PATH,
 ) -> Dict[str, Any]:
     raw_state = json.loads(Path(raw_state_path).read_text(encoding="utf-8"))
     daily_path = Path(daily_state_path)

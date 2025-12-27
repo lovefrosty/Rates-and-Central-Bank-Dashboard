@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 from typing import Any, Dict, Optional
 
+from Signals import state_paths
+
 
 def _get_entry(raw_state: Dict[str, Any], section: str, key: str) -> Dict[str, Any]:
     container = raw_state.get(section, {})
@@ -28,6 +30,21 @@ def _get_change_1m(entry: Dict[str, Any]) -> Optional[float]:
     return None if change is None else float(change)
 
 
+def _get_cpi_yoy(raw_state: Dict[str, Any]) -> Optional[float]:
+    policy = raw_state.get("policy", {})
+    if not isinstance(policy, dict):
+        return None
+    entry = policy.get("cpi_level", {})
+    if not isinstance(entry, dict):
+        return None
+    meta = entry.get("meta", {})
+    current = meta.get("current", entry.get("value"))
+    year_ago = meta.get("year_ago")
+    if current is None or year_ago in (None, 0):
+        return None
+    return (float(current) / float(year_ago) - 1.0) * 100
+
+
 def _resolve_breakeven(
     nominal_value: Optional[float],
     real_value: Optional[float],
@@ -41,7 +58,7 @@ def _resolve_breakeven(
         return None, "FAILED"
     if nominal_status == "FAILED" or real_status == "FAILED":
         return None, "FAILED"
-    if nominal_status in {"OK", "FALLBACK"} and real_status in {"OK", "FALLBACK"}:
+    if nominal_status == "OK" and real_status == "OK":
         return nominal_value - real_value, "OK"
     return None, "FAILED"
 
@@ -69,6 +86,11 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     real_value = _get_current(real_entry)
     nominal_status = _get_status(nominal_entry)
     real_status = _get_status(real_entry)
+    nominal_change = _get_change_1m(nominal_entry)
+    real_change = _get_change_1m(real_entry)
+    breakeven_change = None
+    if nominal_change is not None and real_change is not None:
+        breakeven_change = nominal_change - real_change
 
     breakeven_value, breakeven_status = _resolve_breakeven(
         nominal_value,
@@ -77,14 +99,18 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         nominal_status,
         real_status,
     )
+    cpi_yoy_pct = _get_cpi_yoy(raw_state)
 
     return {
         "nominal_10y": nominal_value,
         "real_10y": real_value,
         "breakeven_10y": breakeven_value,
+        "breakeven_10y_change": breakeven_change,
+        "cpi_yoy_pct": cpi_yoy_pct,
+        "real_rate_spread": breakeven_value,
         "driver_read": _driver_read(
-            _get_change_1m(nominal_entry),
-            _get_change_1m(real_entry),
+            nominal_change,
+            real_change,
         ),
         "data_quality": {
             "nominal": nominal_status,
@@ -95,8 +121,8 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def write_daily_state(
-    raw_state_path: Path | str = Path("signals/raw_state.json"),
-    daily_state_path: Path | str = Path("signals/daily_state.json"),
+    raw_state_path: Path | str = state_paths.RAW_STATE_PATH,
+    daily_state_path: Path | str = state_paths.DAILY_STATE_PATH,
 ) -> Dict[str, Any]:
     raw_state = json.loads(Path(raw_state_path).read_text(encoding="utf-8"))
     daily_path = Path(daily_state_path)

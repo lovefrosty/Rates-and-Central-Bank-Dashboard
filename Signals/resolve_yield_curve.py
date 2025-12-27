@@ -1,4 +1,4 @@
-"""Resolve yield curve regime from signals/raw_state.json.
+"""Resolve yield curve regime from signals/daily_state.json.
 
 Rules (nominal yields, in percentage points):
 - Compute slopes:
@@ -19,13 +19,11 @@ Rules (nominal yields, in percentage points):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict
 
-
-_OK_STATUSES = {"OK", "FALLBACK"}
+from Signals import state_paths
 
 
 @dataclass(frozen=True)
@@ -35,30 +33,42 @@ class YieldInputs:
     y10y: float
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _get_block(daily_state: Dict[str, Any], key: str) -> Dict[str, Any]:
+    block = daily_state.get(key, {})
+    return block if isinstance(block, dict) else {}
 
 
-def _require_ingestion_value(raw: Dict, section: str, key: str) -> float:
-    section_obj = raw.get(section)
-    if not isinstance(section_obj, dict):
-        raise ValueError(f"missing section: {section}")
-    item = section_obj.get(key)
-    if not isinstance(item, dict):
-        raise ValueError(f"missing ingestion: {section}.{key}")
-    status = item.get("status")
-    if status not in _OK_STATUSES:
-        raise ValueError(f"invalid status for {section}.{key}: {status}")
-    value = item.get("value")
-    if not isinstance(value, (int, float)):
-        raise ValueError(f"invalid value for {section}.{key}: {value}")
-    return float(value)
+def _current_curve_map(curve_block: Dict[str, Any]) -> Dict[str, float]:
+    tenors = curve_block.get("tenors")
+    lines = curve_block.get("lines")
+    if not isinstance(tenors, list) or not isinstance(lines, dict):
+        raise ValueError("yield_curve.tenors or yield_curve.lines missing")
+    current = lines.get("current")
+    if not isinstance(current, list):
+        raise ValueError("yield_curve.lines.current missing")
+    if len(tenors) != len(current):
+        raise ValueError("yield_curve tenors/current length mismatch")
+    mapping: Dict[str, float] = {}
+    for tenor, value in zip(tenors, current):
+        if value is None:
+            continue
+        if not isinstance(value, (int, float)):
+            continue
+        mapping[tenor] = float(value)
+    return mapping
 
 
-def _extract_yields(raw: Dict) -> YieldInputs:
-    y3m = _require_ingestion_value(raw, "duration", "y3m_nominal")
-    y2y = _require_ingestion_value(raw, "duration", "y2y_nominal")
-    y10y = _require_ingestion_value(raw, "duration", "y10_nominal")
+def _require_tenor_value(mapping: Dict[str, float], tenor: str) -> float:
+    if tenor not in mapping:
+        raise ValueError(f"missing current yield for {tenor}")
+    return mapping[tenor]
+
+
+def _extract_yields(curve_block: Dict[str, Any]) -> YieldInputs:
+    current_map = _current_curve_map(curve_block)
+    y3m = _require_tenor_value(current_map, "3M")
+    y2y = _require_tenor_value(current_map, "2Y")
+    y10y = _require_tenor_value(current_map, "10Y")
     return YieldInputs(y3m=y3m, y2y=y2y, y10y=y10y)
 
 
@@ -93,8 +103,8 @@ def _determine_regime(slopes: Dict[str, float]) -> str:
     return "NORMAL"
 
 
-def build_yield_curve_state(raw: Dict) -> Dict[str, object]:
-    inputs = _extract_yields(raw)
+def build_yield_curve_state(curve_block: Dict[str, Any]) -> Dict[str, object]:
+    inputs = _extract_yields(curve_block)
     slopes = _compute_slopes(inputs)
     relative_moves = _compute_relative_moves(slopes)
     regime = _determine_regime(slopes)
@@ -107,21 +117,17 @@ def build_yield_curve_state(raw: Dict) -> Dict[str, object]:
 
 
 def resolve_yield_curve(
-    raw_state_path: Path | str = Path("signals/raw_state.json"),
-    daily_state_path: Path | str = Path("Signals/daily_state.json"),
+    daily_state_path: Path | str = state_paths.DAILY_STATE_PATH,
+    raw_state_path: Path | str = state_paths.RAW_STATE_PATH,
 ) -> Dict[str, object]:
-    raw_state_path = Path(raw_state_path)
     daily_state_path = Path(daily_state_path)
-    raw = json.loads(raw_state_path.read_text(encoding="utf-8"))
-    resolved = build_yield_curve_state(raw)
+    daily_state = json.loads(daily_state_path.read_text(encoding="utf-8"))
 
-    daily_state = {}
-    if daily_state_path.exists():
-        daily_state = json.loads(daily_state_path.read_text(encoding="utf-8") or "{}")
-        if not isinstance(daily_state, dict):
-            daily_state = {}
-    daily_state["meta"] = {"generated_at": _now_iso()}
-    daily_state["yield_curve"] = resolved
+    curve_block = _get_block(daily_state, "yield_curve")
+    resolved = build_yield_curve_state(curve_block)
+    merged = dict(curve_block)
+    merged.update(resolved)
+    daily_state["yield_curve"] = merged
 
     daily_state_path.parent.mkdir(parents=True, exist_ok=True)
     daily_state_path.write_text(

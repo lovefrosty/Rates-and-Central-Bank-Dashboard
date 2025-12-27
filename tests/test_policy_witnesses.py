@@ -1,9 +1,51 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from Analytics.policy_witnesses import build_policy_witnesses
-from Data import fetch_policy_witnesses
+from Data import (
+    fetch_credit_spreads,
+    fetch_global_policy,
+    fetch_inflation,
+    fetch_inflation_witnesses,
+    fetch_labor_market,
+    fetch_liquidity,
+    fetch_policy,
+    fetch_policy_witnesses,
+    fetch_vol,
+    fetch_yields,
+)
 from update import write_raw_state
+
+
+@pytest.fixture(autouse=True)
+def _patch_fred_fetchers(monkeypatch):
+    def _ok(series_id):
+        return 1.0, {
+            "series_id": series_id,
+            "start_of_year": 0.9,
+            "last_week": 0.95,
+            "current": 1.0,
+            "as_of_start_of_year": "2024-01-02",
+            "as_of_last_week": "2024-12-20",
+            "as_of_current": "2024-12-27",
+        }, "OK", "openbb:fred"
+
+    for module in (
+        fetch_policy,
+        fetch_inflation,
+        fetch_policy_witnesses,
+        fetch_yields,
+        fetch_liquidity,
+        fetch_vol,
+        fetch_credit_spreads,
+        fetch_labor_market,
+        fetch_global_policy,
+        fetch_inflation_witnesses,
+    ):
+        if hasattr(module, "_fetch_fred_series"):
+            monkeypatch.setattr(module, "_fetch_fred_series", _ok)
 
 
 def test_fetch_sofr_schema(monkeypatch):
@@ -16,7 +58,7 @@ def test_fetch_sofr_schema(monkeypatch):
             "as_of_start_of_year": "2024-01-02",
             "as_of_last_week": "2024-12-20",
             "as_of_current": "2024-12-27",
-        }
+        }, "OK", "openbb"
 
     monkeypatch.setattr(fetch_policy_witnesses, "_fetch_fred_series", _ok)
     res = fetch_policy_witnesses.fetch_sofr()

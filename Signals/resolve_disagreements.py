@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 from typing import Any, Dict, Optional
 
+from Signals import state_paths
+
 
 def _get_block(daily_state: Dict[str, Any], key: str) -> Dict[str, Any]:
     block = daily_state.get(key, {})
@@ -68,7 +70,7 @@ def _expectations_vs_liquidity(expected: Optional[str], liquidity: Optional[str]
     return {"flag": flag, "explanation": explanation}
 
 
-def resolve_disagreements(daily_state_path: Path | str = Path("signals/daily_state.json")) -> Dict[str, Any]:
+def resolve_disagreements(daily_state_path: Path | str = state_paths.DAILY_STATE_PATH) -> Dict[str, Any]:
     path = Path(daily_state_path)
     daily_state = json.loads(path.read_text(encoding="utf-8"))
 

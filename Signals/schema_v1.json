@@ -1,6 +1,6 @@
 {
   "timestamp": "",
-  "data_health": "OK | FALLBACK | PARTIAL",
+  "data_health": "OK | PARTIAL | FAILED",
   "policy": {
     "effr": null,
     "cpi_yoy": null,

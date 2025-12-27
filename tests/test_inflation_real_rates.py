@@ -1,4 +1,7 @@
 import json
+
+import pytest
+
 from Analytics.inflation_real_rates import build_inflation_real_rates, write_daily_state
 
 
@@ -62,3 +65,16 @@ def test_driver_read_mapping():
     }
     out = build_inflation_real_rates(raw)
     assert out["driver_read"] == "Inflation repricing"
+
+
+def test_cpi_yoy_derived():
+    raw = {
+        "policy": {"cpi_level": {"value": 110.0, "status": "OK", "meta": {"current": 110.0, "year_ago": 100.0}}},
+        "duration": {
+            "y10_nominal": _entry(4.0, status="OK"),
+            "y10_real": _entry(2.0, status="OK"),
+        },
+    }
+    out = build_inflation_real_rates(raw)
+    assert out["cpi_yoy_pct"] == pytest.approx(10.0)
+    assert out["real_rate_spread"] == 2.0
