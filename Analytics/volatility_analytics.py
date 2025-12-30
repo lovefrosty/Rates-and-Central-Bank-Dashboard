@@ -50,22 +50,27 @@ def _snapshot_values(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
     meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
     current = meta.get("current", entry.get("value"))
     last_week = meta.get("last_week")
+    last_month = meta.get("last_month")
+    last_6m = meta.get("last_6m")
     start_of_year = meta.get("start_of_year")
     change_1m_pct = meta.get("1m_change_pct")
-    last_month = None
-    if current is not None and change_1m_pct not in (None, -100):
+    change_6m_pct = meta.get("6m_change_pct")
+    if last_month is None and current is not None and change_1m_pct not in (None, -100):
         last_month = current / (1 + (change_1m_pct / 100))
+    if last_6m is None and current is not None and change_6m_pct not in (None, -100):
+        last_6m = current / (1 + (change_6m_pct / 100))
     return {
         "current": None if current is None else float(current),
         "last_week": None if last_week is None else float(last_week),
         "last_month": None if last_month is None else float(last_month),
+        "last_6m": None if last_6m is None else float(last_6m),
         "start_of_year": None if start_of_year is None else float(start_of_year),
     }
 
 
 def _ratio_snapshots(numerator: Dict[str, Optional[float]], denominator: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
     ratios: Dict[str, Optional[float]] = {}
-    for key in ("current", "last_week", "last_month", "start_of_year"):
+    for key in ("current", "last_week", "last_month", "last_6m", "start_of_year"):
         num_val = numerator.get(key)
         denom_val = denominator.get(key)
         if num_val is None or denom_val in (None, 0):

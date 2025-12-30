@@ -30,7 +30,8 @@ def test_history_state_sanitizes_nan_inf(tmp_path, monkeypatch):
     assert "Infinity" not in content
     data = json.loads(content)
     assert "series" in data
-    assert "volatility_transforms" in data
-    assert "meta" in data["volatility_transforms"]
-    series_entry = data["series"].get("rrp", {})
-    assert "anchors" in series_entry
+    assert "transforms" in data
+    assert "meta" in data
+    series_entry = data["series"].get("vix", {})
+    assert "dates" in series_entry
+    assert "values" in series_entry

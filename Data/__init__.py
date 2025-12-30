@@ -10,6 +10,7 @@ from . import (
     fetch_policy,
     fetch_policy_curve,
     fetch_policy_futures,
+    fetch_policy_rates,
     fetch_policy_witnesses,
     fetch_vol,
     fetch_yields,

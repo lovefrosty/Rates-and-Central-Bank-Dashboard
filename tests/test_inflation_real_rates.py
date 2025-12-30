@@ -5,12 +5,16 @@ import pytest
 from Analytics.inflation_real_rates import build_inflation_real_rates, write_daily_state
 
 
-def _entry(value, status="OK", change_1m=None, last_week=None, start_of_year=None):
+def _entry(value, status="OK", change_1m=None, last_week=None, last_month=None, last_6m=None, start_of_year=None):
     meta = {}
     if change_1m is not None:
         meta["1m_change"] = change_1m
     if last_week is not None:
         meta["last_week"] = last_week
+    if last_month is not None:
+        meta["last_month"] = last_month
+    if last_6m is not None:
+        meta["last_6m"] = last_6m
     if start_of_year is not None:
         meta["start_of_year"] = start_of_year
     return {
@@ -45,6 +49,7 @@ def test_breakeven_computed_when_missing():
     out = build_inflation_real_rates(raw)
     assert out["breakeven_10y"] == 2.5
     assert out["data_quality"]["breakeven"] == "OK"
+    assert out["inflation_proxy"]["breakeven_10y"]["type"] == "Breakeven"
 
 
 def test_missing_inputs_propagate_none():
@@ -82,18 +87,20 @@ def test_cpi_yoy_derived():
     out = build_inflation_real_rates(raw)
     assert out["cpi_yoy_pct"] == pytest.approx(10.0)
     assert out["real_rate_spread"] == 2.0
+    assert out["inflation_proxy"]["cpi_yoy"]["type"] == "CPI_YoY"
 
 
 def test_anchor_values():
     raw = {
         "duration": {
-            "y10_nominal": _entry(4.0, change_1m=0.2, last_week=3.9, start_of_year=3.5),
-            "y10_real": _entry(1.5, change_1m=0.1, last_week=1.4, start_of_year=1.0),
+            "y10_nominal": _entry(4.0, change_1m=0.2, last_week=3.9, last_month=3.8, last_6m=3.2, start_of_year=3.5),
+            "y10_real": _entry(1.5, change_1m=0.1, last_week=1.4, last_month=1.4, last_6m=1.1, start_of_year=1.0),
         }
     }
     out = build_inflation_real_rates(raw)
     real = out["real_10y_anchors"]
     breakeven = out["breakeven_10y_anchors"]
     assert real["last_month"] == pytest.approx(1.4)
+    assert real["last_6m"] == pytest.approx(1.1)
     assert breakeven["current"] == pytest.approx(2.5)
     assert breakeven["start_of_year"] == pytest.approx(2.5)

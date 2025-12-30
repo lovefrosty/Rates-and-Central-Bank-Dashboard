@@ -18,6 +18,7 @@ from Data import (
     fetch_labor_market,
     fetch_liquidity,
     fetch_policy,
+    fetch_policy_rates,
     fetch_policy_witnesses,
     fetch_policy_futures,
     fetch_policy_curve,
@@ -145,12 +146,31 @@ def build_raw_state() -> Dict:
         "boj_stance": _safe_call(fetch_global_policy.fetch_boj_stance_manual),
     }
 
+    policy_rates = {
+        # Parallel addition: policy_rates
+        "eur": _safe_call(fetch_policy_rates.fetch_policy_rate_eur),
+        "gbp": _safe_call(fetch_policy_rates.fetch_policy_rate_gbp),
+        "jpy": _safe_call(fetch_policy_rates.fetch_policy_rate_jpy),
+        "chf": _safe_call(fetch_policy_rates.fetch_policy_rate_chf),
+        "aud": _safe_call(fetch_policy_rates.fetch_policy_rate_aud),
+        "nzd": _safe_call(fetch_policy_rates.fetch_policy_rate_nzd),
+        "cad": _safe_call(fetch_policy_rates.fetch_policy_rate_cad),
+        "cnh": _safe_call(fetch_policy_rates.fetch_policy_rate_cnh),
+    }
+
     fx = {
         # Parallel addition: fx
         "usdjpy": _safe_call(fetch_fx.fetch_usdjpy),
         "eurusd": _safe_call(fetch_fx.fetch_eurusd),
         "gbpusd": _safe_call(fetch_fx.fetch_gbpusd),
         "usdcad": _safe_call(fetch_fx.fetch_usdcad),
+        "audusd": _safe_call(fetch_fx.fetch_audusd),
+        "nzdusd": _safe_call(fetch_fx.fetch_nzdusd),
+        "usdnok": _safe_call(fetch_fx.fetch_usdnok),
+        "usdmxn": _safe_call(fetch_fx.fetch_usdmxn),
+        "usdzar": _safe_call(fetch_fx.fetch_usdzar),
+        "usdchf": _safe_call(fetch_fx.fetch_usdchf),
+        "usdcnh": _safe_call(fetch_fx.fetch_usdcnh),
     }
 
     policy_curve = {
@@ -174,6 +194,7 @@ def build_raw_state() -> Dict:
         "labor_market": labor_market,
         "credit_spreads": credit_spreads,
         "global_policy": global_policy,
+        "policy_rates": policy_rates,
         "fx": fx,
         "policy_curve": policy_curve,  # ← APPEND HERE
         "duration": duration,
@@ -203,6 +224,8 @@ def write_raw_state(path: str | os.PathLike = state_paths.RAW_STATE_PATH) -> Non
     from Analytics.fx_panel import write_daily_state as write_fx_panel
     from Analytics.system_health import write_daily_state as write_system_health
     from Analytics.policy_futures_curve import write_daily_state as write_policy_futures_curve
+    from History.volatility_regime import write_daily_state as write_volatility_regime
+    from History.fx_volatility import write_daily_state as write_fx_volatility
     from Signals.resolve_policy import resolve_policy as resolve_policy_spot
     from Signals.resolve_policy_curve import resolve_policy_curve
     from Signals.resolve_liquidity_curve import resolve_liquidity_curve
@@ -221,6 +244,8 @@ def write_raw_state(path: str | os.PathLike = state_paths.RAW_STATE_PATH) -> Non
     write_fx_panel()
     write_system_health()
     write_policy_futures_curve()
+    write_volatility_regime()
+    write_fx_volatility()
     resolve_policy_spot()
     resolve_policy_curve()
     resolve_liquidity_curve()

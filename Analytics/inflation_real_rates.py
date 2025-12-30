@@ -35,15 +35,17 @@ def _snapshots(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
     meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
     current = meta.get("current", entry.get("value"))
     last_week = meta.get("last_week")
+    last_month = meta.get("last_month")
+    last_6m = meta.get("last_6m")
     start_of_year = meta.get("start_of_year")
     change_1m = meta.get("1m_change")
-    last_month = None
-    if current is not None and change_1m is not None:
+    if last_month is None and current is not None and change_1m is not None:
         last_month = current - change_1m
     return {
         "current": None if current is None else float(current),
         "last_week": None if last_week is None else float(last_week),
         "last_month": None if last_month is None else float(last_month),
+        "last_6m": None if last_6m is None else float(last_6m),
         "start_of_year": None if start_of_year is None else float(start_of_year),
     }
 
@@ -93,6 +95,21 @@ def _driver_read(nominal_change: Optional[float], real_change: Optional[float]) 
     return "Mixed drivers / insufficient data"
 
 
+def _inflation_proxy_meta(proxy_type: str, orientation: str, confidence: str, fallback_used: bool) -> Dict[str, Any]:
+    return {
+        "type": proxy_type,
+        "orientation": orientation,
+        "confidence": confidence,
+        "fallback_used": fallback_used,
+    }
+
+
+def _change_bps(current: Optional[float], prior: Optional[float]) -> Optional[float]:
+    if current is None or prior is None:
+        return None
+    return (current - prior) * 100
+
+
 def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     nominal_entry = _get_entry(raw_state, "duration", "y10_nominal")
     real_entry = _get_entry(raw_state, "duration", "y10_real")
@@ -117,16 +134,47 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         nominal_status,
         real_status,
     )
+    breakeven_fallback = not bool(breakeven_entry)
+    breakeven_confidence = "HIGH" if breakeven_status == "OK" else "LOW"
     cpi_yoy_pct = _get_cpi_yoy(raw_state)
     nominal_snapshots = _snapshots(nominal_entry)
     real_snapshots = _snapshots(real_entry)
     breakeven_snapshots = {}
-    for key in ("current", "last_week", "last_month", "start_of_year"):
+    for key in ("current", "last_week", "last_month", "last_6m", "start_of_year"):
         nominal_anchor = nominal_snapshots.get(key)
         real_anchor = real_snapshots.get(key)
         breakeven_snapshots[key] = (
             None if nominal_anchor is None or real_anchor is None else nominal_anchor - real_anchor
         )
+
+    inflation_proxy = {
+        "breakeven_10y": _inflation_proxy_meta(
+            "Breakeven",
+            "expectation-based",
+            breakeven_confidence,
+            breakeven_fallback,
+        )
+    }
+    cpi_confidence = "MEDIUM" if cpi_yoy_pct is not None else "LOW"
+    inflation_proxy["cpi_yoy"] = _inflation_proxy_meta(
+        "CPI_YoY",
+        "backward-looking",
+        cpi_confidence,
+        False,
+    )
+
+    real_changes = {
+        "change_1w_bps": _change_bps(real_snapshots.get("current"), real_snapshots.get("last_week")),
+        "change_1m_bps": _change_bps(real_snapshots.get("current"), real_snapshots.get("last_month")),
+        "change_6m_bps": _change_bps(real_snapshots.get("current"), real_snapshots.get("last_6m")),
+        "change_ytd_bps": _change_bps(real_snapshots.get("current"), real_snapshots.get("start_of_year")),
+    }
+    breakeven_changes = {
+        "change_1w_bps": _change_bps(breakeven_snapshots.get("current"), breakeven_snapshots.get("last_week")),
+        "change_1m_bps": _change_bps(breakeven_snapshots.get("current"), breakeven_snapshots.get("last_month")),
+        "change_6m_bps": _change_bps(breakeven_snapshots.get("current"), breakeven_snapshots.get("last_6m")),
+        "change_ytd_bps": _change_bps(breakeven_snapshots.get("current"), breakeven_snapshots.get("start_of_year")),
+    }
 
     return {
         "nominal_10y": nominal_value,
@@ -143,7 +191,9 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
                 "current": real_snapshots.get("current"),
                 "last_week": real_snapshots.get("last_week"),
                 "last_month": real_snapshots.get("last_month"),
+                "last_6m": real_snapshots.get("last_6m"),
                 "start_of_year": real_snapshots.get("start_of_year"),
+                **real_changes,
             }
         ],
         "breakevens": [
@@ -152,13 +202,16 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
                 "current": breakeven_snapshots.get("current"),
                 "last_week": breakeven_snapshots.get("last_week"),
                 "last_month": breakeven_snapshots.get("last_month"),
+                "last_6m": breakeven_snapshots.get("last_6m"),
                 "start_of_year": breakeven_snapshots.get("start_of_year"),
+                **breakeven_changes,
             }
         ],
         "driver_read": _driver_read(
             nominal_change,
             real_change,
         ),
+        "inflation_proxy": inflation_proxy,
         "data_quality": {
             "nominal": nominal_status,
             "real": real_status,

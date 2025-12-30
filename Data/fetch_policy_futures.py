@@ -2,7 +2,7 @@
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-from Data.utils.snapshot_selection import select_prior, select_snapshots
+from Data.utils.snapshot_selection import select_snapshots
 from Data import yfinance_provider
 
 
@@ -80,17 +80,22 @@ def fetch_zq_contract(ticker: str) -> Dict[str, Any]:
             raise ValueError("no observations")
         current_date, current_value = current
         last_week = snapshots["last_week"]
+        last_month = snapshots["last_month"]
+        last_6m = snapshots["last_6m"]
         start_of_year = snapshots["start_of_year"]
-        month_ago = select_prior(points, current_date, days=30)
-        change_1m = None if month_ago is None else current_value - month_ago[1]
+        change_1m = None if last_month is None else current_value - last_month[1]
         meta = {
             "ticker": ticker,
             "start_of_year": None if start_of_year is None else start_of_year[1],
             "last_week": None if last_week is None else last_week[1],
+            "last_month": None if last_month is None else last_month[1],
+            "last_6m": None if last_6m is None else last_6m[1],
             "current": current_value,
             "1m_change": change_1m,
             "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
             "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
+            "as_of_last_month": _format_date(None if last_month is None else last_month[0]),
+            "as_of_last_6m": _format_date(None if last_6m is None else last_6m[0]),
             "as_of_current": _format_date(current_date),
         }
         return _ingestion_object(

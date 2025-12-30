@@ -12,6 +12,7 @@ from Data import (
     fetch_labor_market,
     fetch_liquidity,
     fetch_policy,
+    fetch_policy_rates,
     fetch_policy_witnesses,
     fetch_vol,
     fetch_yields,
@@ -43,6 +44,7 @@ def _patch_fred_fetchers(monkeypatch):
         fetch_labor_market,
         fetch_global_policy,
         fetch_inflation_witnesses,
+        fetch_policy_rates,
     ):
         if hasattr(module, "_fetch_fred_series"):
             monkeypatch.setattr(module, "_fetch_fred_series", _ok)
@@ -63,6 +65,7 @@ def test_write_raw_state(tmp_path):
         "labor_market",
         "credit_spreads",
         "global_policy",
+        "policy_rates",
         "fx",
         "policy_curve",
         "duration",
@@ -92,7 +95,21 @@ def test_write_raw_state(tmp_path):
     assert credit_spreads_keys.issubset(set(j["credit_spreads"].keys()))
     global_policy_keys = {"ecb_deposit_rate", "usd_index", "dxy", "boj_stance"}
     assert global_policy_keys.issubset(set(j["global_policy"].keys()))
-    fx_keys = {"usdjpy", "eurusd", "gbpusd", "usdcad"}
+    policy_rates_keys = {"eur", "gbp", "jpy", "chf", "aud", "nzd", "cad", "cnh"}
+    assert policy_rates_keys.issubset(set(j["policy_rates"].keys()))
+    fx_keys = {
+        "usdjpy",
+        "eurusd",
+        "gbpusd",
+        "usdcad",
+        "audusd",
+        "nzdusd",
+        "usdnok",
+        "usdmxn",
+        "usdzar",
+        "usdchf",
+        "usdcnh",
+    }
     assert fx_keys.issubset(set(j["fx"].keys()))
     volatility_keys = {"vix", "move", "gvz", "ovx"}
     assert volatility_keys.issubset(set(j["volatility"].keys()))

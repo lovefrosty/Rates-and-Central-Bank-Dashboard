@@ -84,20 +84,21 @@ def _fetch_yfinance_series(ticker: str) -> Tuple[float, Dict[str, Any], str, str
         raise ValueError("no observations")
     current_date, current_value = current
     last_week = snapshots["last_week"]
+    last_month = snapshots["last_month"]
+    last_6m = snapshots["last_6m"]
     start_of_year = snapshots["start_of_year"]
     prior_1d = select_prior(points, current_date, days=1)
     prior_5d = select_prior(points, current_date, days=5)
-    prior_1m = select_prior(points, current_date, days=30)
-    prior_6m = select_prior(points, current_date, days=180)
-
     change_1d = _pct_change(current_value, None if prior_1d is None else prior_1d[1])
     change_5d = _pct_change(current_value, None if prior_5d is None else prior_5d[1])
-    change_1m = _pct_change(current_value, None if prior_1m is None else prior_1m[1])
-    change_6m = _pct_change(current_value, None if prior_6m is None else prior_6m[1])
+    change_1m = _pct_change(current_value, None if last_month is None else last_month[1])
+    change_6m = _pct_change(current_value, None if last_6m is None else last_6m[1])
     meta = {
         "series_id": ticker,
         "start_of_year": None if start_of_year is None else start_of_year[1],
         "last_week": None if last_week is None else last_week[1],
+        "last_month": None if last_month is None else last_month[1],
+        "last_6m": None if last_6m is None else last_6m[1],
         "current": current_value,
         "1d_change_pct": change_1d,
         "5d_change_pct": change_5d,
@@ -106,6 +107,8 @@ def _fetch_yfinance_series(ticker: str) -> Tuple[float, Dict[str, Any], str, str
         "5d_roc": change_5d,
         "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
         "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
+        "as_of_last_month": _format_date(None if last_month is None else last_month[0]),
+        "as_of_last_6m": _format_date(None if last_6m is None else last_6m[0]),
         "as_of_current": _format_date(current_date),
     }
     return current_value, meta, "OK", "yfinance"

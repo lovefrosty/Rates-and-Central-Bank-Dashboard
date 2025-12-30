@@ -17,6 +17,7 @@ from Signals import state_paths
 
 ANCHOR_ORDER: List[Tuple[str, str]] = [
     ("Start of Year", "start_of_year"),
+    ("6M", "last_6m"),
     ("1M", "last_month"),
     ("1W", "last_week"),
     ("Current", "current"),
@@ -25,24 +26,31 @@ ANCHOR_LABELS = [label for label, _ in ANCHOR_ORDER]
 
 SNAPSHOT_STYLE = {
     "Start of Year": [6, 3],
+    "6M": [5, 2],
     "1M": [2, 2],
     "1W": [4, 2],
     "Current": [1, 0],
 }
 SNAPSHOT_COLORS = {
     "Start of Year": "#56B4E9",
+    "6M": "#0072B2",
     "1M": "#E69F00",
     "1W": "#CC79A7",
     "Current": "#F0E442",
 }
 SERIES_COLORS = ["#56B4E9", "#E69F00", "#CC79A7", "#009E73", "#0072B2"]
-WINDOW_OPTIONS = [("6m", "6M"), ("1y", "1Y"), ("5y", "5Y")]
+WINDOW_OPTIONS = [("1y", "1Y"), ("3y", "3Y"), ("5y", "5Y")]
+WINDOW_DAYS = {"1y": 365, "3y": 1095, "5y": 1825}
 ANCHOR_SHAPES = {
     "Start of Year": "diamond",
+    "6M": "triangle-down",
     "1M": "square",
     "1W": "triangle-up",
     "Current": "circle",
 }
+
+MISSING_DISPLAY = "—"
+
 
 
 st.set_page_config(
@@ -86,81 +94,91 @@ def _get_block(data: dict, key: str) -> dict:
 
 def _format_cell(value, decimals: int = 2) -> str:
     if value is None:
-        return "Unavailable"
+        return MISSING_DISPLAY
     return f"{value:.{decimals}f}"
 
 
 def _format_percent(value, decimals: int = 2) -> str:
     if value is None:
-        return "Unavailable"
+        return MISSING_DISPLAY
     return f"{value:.{decimals}f}%"
 
 
 def _format_bps(value, decimals: int = 1) -> str:
     if value is None:
-        return "Unavailable"
+        return MISSING_DISPLAY
     return f"{value:.{decimals}f} bps"
 
 
 def _format_number(value, decimals: int = 2) -> str:
     if value is None:
-        return "Unavailable"
+        return MISSING_DISPLAY
     return f"{value:,.{decimals}f}"
 
 
-def _format_table_rows(rows):
-    formatted = []
-    for row in rows:
-        formatted.append(
-            {
-                "Tenor": row["tenor"],
-                "Start of Year": row.get("start_of_year"),
-                "Last Month": row.get("last_month"),
-                "Last Week": row.get("last_week"),
-                "Current": row.get("current"),
-                "Weekly Change (bps)": row.get("weekly_change_bps"),
-            }
-        )
-    return formatted
+def _percent_formatter(decimals: int = 2):
+    return lambda value: _format_percent(value, decimals=decimals)
+
+
+def _bps_formatter(decimals: int = 1):
+    return lambda value: _format_bps(value, decimals=decimals)
+
+
+def _number_formatter(decimals: int = 2):
+    return lambda value: _format_number(value, decimals=decimals)
+
+
+def _style_magnitude(df: pd.DataFrame, columns: List[str]):
+    styler = df.style
+    if not columns:
+        return styler
+    numeric = df[columns].apply(pd.to_numeric, errors="coerce")
+    max_val = numeric.abs().max().max()
+    if max_val is None or pd.isna(max_val) or max_val == 0:
+        return styler
+
+    def _colorize(value):
+        if value is None or pd.isna(value):
+            return ""
+        intensity = min(abs(float(value)) / max_val, 1.0)
+        alpha = 0.08 + (0.5 * intensity)
+        return f"background-color: rgba(86, 180, 233, {alpha:.2f});"
+
+    return styler.applymap(_colorize, subset=columns)
+
+
+def _apply_window(rows: list[dict], window: str) -> list[dict]:
+    days = WINDOW_DAYS.get(window)
+    if not rows or days is None:
+        return rows
+    df = pd.DataFrame(rows)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+    if df.empty:
+        return []
+    last_date = df["Date"].max()
+    cutoff = last_date - pd.Timedelta(days=days)
+    df = df[df["Date"] >= cutoff]
+    df["Date"] = df["Date"].dt.date.astype(str)
+    return df.to_dict("records")
 
 
 def _history_rows(history: dict, key: str, window: str, label: str) -> list[dict]:
     series = history.get("series", {}).get(key, {}) if isinstance(history, dict) else {}
-    data = series.get(window, [])
-    if not isinstance(data, list):
+    dates = series.get("dates", [])
+    values = series.get("values", [])
+    if not isinstance(dates, list) or not isinstance(values, list):
         return []
-    rows = []
-    for row in data:
-        if not isinstance(row, dict):
-            continue
-        rows.append({"Date": row.get("date"), "Value": row.get("value"), "Series": label})
-    return rows
-
-
-def _history_anchor_rows(history: dict, key: str, label: str) -> list[dict]:
-    series = history.get("series", {}).get(key, {}) if isinstance(history, dict) else {}
-    anchors = series.get("anchors", {}) if isinstance(series, dict) else {}
-    rows = []
-    for anchor_label, anchor_key in ANCHOR_ORDER:
-        anchor = anchors.get(anchor_key, {})
-        if not isinstance(anchor, dict):
-            continue
-        date = anchor.get("date")
-        value = anchor.get("value")
-        if date is None or value is None:
-            continue
-        rows.append({"Date": date, "Value": value, "Series": label, "Anchor": anchor_label})
-    return rows
+    rows = [{"Date": dt, "Value": val, "Series": label} for dt, val in zip(dates, values)]
+    return _apply_window(rows, window)
 
 
 def _history_chart(
     history: dict, window: str, series_map: dict[str, str], title: str
 ) -> Optional[alt.Chart]:
     rows: list[dict] = []
-    anchor_rows: list[dict] = []
     for key, label in series_map.items():
         rows.extend(_history_rows(history, key, window, label))
-        anchor_rows.extend(_history_anchor_rows(history, key, label))
     if not rows:
         return None
     df = pd.DataFrame(rows)
@@ -184,46 +202,13 @@ def _history_chart(
         )
         .properties(title=title)
     )
-    if not anchor_rows:
-        return base
-    anchor_df = pd.DataFrame(anchor_rows)
-    anchor_df["Date"] = pd.to_datetime(anchor_df["Date"], errors="coerce")
-    anchor_df = anchor_df.dropna(subset=["Date"])
-    if anchor_df.empty:
-        return base
-    points = (
-        alt.Chart(anchor_df)
-        .mark_point(size=80, filled=True)
-        .encode(
-            x=alt.X("Date:T", title="Date"),
-            y=alt.Y("Value:Q", title="Level"),
-            color=color,
-            shape=alt.Shape(
-                "Anchor:N",
-                sort=ANCHOR_LABELS,
-                scale=alt.Scale(domain=ANCHOR_LABELS, range=[ANCHOR_SHAPES[a] for a in ANCHOR_LABELS]),
-            ),
-            tooltip=["Series", "Anchor", "Date", "Value"],
-        )
-    )
-    labels = (
-        alt.Chart(anchor_df)
-        .mark_text(dy=-12, size=10)
-        .encode(
-            x=alt.X("Date:T"),
-            y=alt.Y("Value:Q"),
-            text="Anchor:N",
-            color=color,
-        )
-    )
-    return (base + points + labels).properties(title=title)
+    return base
 
 
 def _history_chart_independent(
     history: dict, window: str, series_map: dict[str, str], title: str
 ) -> Optional[alt.Chart]:
     charts: list[alt.Chart] = []
-    anchor_rows: list[dict] = []
     for key, label in series_map.items():
         rows = _history_rows(history, key, window, label)
         if rows:
@@ -241,78 +226,33 @@ def _history_chart_independent(
                         tooltip=["Date", "Series", "Value"],
                     )
                 )
-        anchor_rows.extend(_history_anchor_rows(history, key, label))
     if not charts:
         return None
     layered = alt.layer(*charts).resolve_scale(y="independent").properties(title=title)
-    if not anchor_rows:
-        return layered
-    anchor_df = pd.DataFrame(anchor_rows)
-    anchor_df["Date"] = pd.to_datetime(anchor_df["Date"], errors="coerce")
-    anchor_df = anchor_df.dropna(subset=["Date"])
-    if anchor_df.empty:
-        return layered
-    points = (
-        alt.Chart(anchor_df)
-        .mark_point(size=80, filled=True)
-        .encode(
-            x=alt.X("Date:T", title="Date"),
-            y=alt.Y("Value:Q", title="Level"),
-            color=alt.Color("Series:N"),
-            shape=alt.Shape(
-                "Anchor:N",
-                sort=ANCHOR_LABELS,
-                scale=alt.Scale(domain=ANCHOR_LABELS, range=[ANCHOR_SHAPES[a] for a in ANCHOR_LABELS]),
-            ),
-            tooltip=["Series", "Anchor", "Date", "Value"],
-        )
-    )
-    labels = (
-        alt.Chart(anchor_df)
-        .mark_text(dy=-12, size=10)
-        .encode(
-            x=alt.X("Date:T"),
-            y=alt.Y("Value:Q"),
-            text="Anchor:N",
-            color=alt.Color("Series:N"),
-        )
-    )
-    return (layered + points + labels).properties(title=title)
+    return layered
 
 
-def _vol_transform_rows(
-    history: dict,
-    window: str,
-    series_key: str,
-    transform_key: str,
-    label: str,
-) -> list[dict]:
-    transforms = history.get("volatility_transforms", {}) if isinstance(history, dict) else {}
-    window_block = transforms.get("windows", {}).get(window, {}) if isinstance(transforms, dict) else {}
-    series_block = window_block.get(series_key, {}) if isinstance(window_block, dict) else {}
-    data = series_block.get(transform_key, [])
-    if not isinstance(data, list):
+def _transform_rows(history: dict, series_key: str, transform_key: str, window: str, label: str) -> list[dict]:
+    transforms = history.get("transforms", {}) if isinstance(history, dict) else {}
+    series_block = transforms.get(series_key, {}) if isinstance(transforms, dict) else {}
+    block = series_block.get(transform_key, {})
+    dates = block.get("dates", []) if isinstance(block, dict) else []
+    values = block.get("values", []) if isinstance(block, dict) else []
+    if not isinstance(dates, list) or not isinstance(values, list):
         return []
-    rows = []
-    for row in data:
-        if not isinstance(row, dict):
-            continue
-        rows.append({"Date": row.get("date"), "Value": row.get("value"), "Series": label})
-    return rows
+    rows = [{"Date": dt, "Value": val, "Series": label} for dt, val in zip(dates, values)]
+    return _apply_window(rows, window)
 
 
-def _vol_simple_rows(history: dict, window: str, key: str, label: str) -> list[dict]:
-    transforms = history.get("volatility_transforms", {}) if isinstance(history, dict) else {}
-    window_block = transforms.get("windows", {}).get(window, {}) if isinstance(transforms, dict) else {}
-    data = window_block.get(key, [])
-    if not isinstance(data, list):
+def _cross_asset_rows(history: dict, key: str, window: str, label: str) -> list[dict]:
+    cross_asset = history.get("cross_asset", {}) if isinstance(history, dict) else {}
+    block = cross_asset.get(key, {}) if isinstance(cross_asset, dict) else {}
+    dates = block.get("dates", []) if isinstance(block, dict) else []
+    values = block.get("values", []) if isinstance(block, dict) else []
+    if not isinstance(dates, list) or not isinstance(values, list):
         return []
-    rows = []
-    for row in data:
-        if not isinstance(row, dict):
-            continue
-        rows.append({"Date": row.get("date"), "Value": row.get("value"), "Series": label})
-    return rows
+    rows = [{"Date": dt, "Value": val, "Series": label} for dt, val in zip(dates, values)]
+    return _apply_window(rows, window)
 
 
 def _select_window(label: str, key: str) -> str:
@@ -379,7 +319,23 @@ def _anchor_chart(
     return chart
 
 
-def _snapshot_curve_chart(tenors: List[str], lines: Dict[str, List[Optional[float]]]) -> alt.Chart:
+def _matrix_rows(matrix: Dict[str, Any]) -> List[Dict[str, Any]]:
+    currencies = matrix.get("currencies", []) if isinstance(matrix, dict) else []
+    values = matrix.get("values_pct", []) if isinstance(matrix, dict) else []
+    rows: List[Dict[str, Any]] = []
+    for i, base in enumerate(currencies):
+        row_vals = values[i] if i < len(values) and isinstance(values[i], list) else []
+        for j, quote in enumerate(currencies):
+            value = row_vals[j] if j < len(row_vals) else None
+            rows.append({"Base": base, "Quote": quote, "Value": value})
+    return rows
+
+
+def _snapshot_curve_chart(
+    tenors: List[str],
+    lines: Dict[str, List[Optional[float]]],
+    y_title: str = "Yield (%)",
+) -> alt.Chart:
     rows = []
     for label, key in ANCHOR_ORDER:
         series = lines.get(key, [])
@@ -392,7 +348,7 @@ def _snapshot_curve_chart(tenors: List[str], lines: Dict[str, List[Optional[floa
         .mark_line(point=True, interpolate="linear")
         .encode(
             x=alt.X("Tenor:N", sort=tenors, title="Tenor"),
-            y=alt.Y("Yield:Q", title="Yield (%)", scale=_y_scale(domain)),
+            y=alt.Y("Yield:Q", title=y_title, scale=_y_scale(domain)),
             color=alt.Color(
                 "Snapshot:N",
                 sort=ANCHOR_LABELS,
@@ -420,16 +376,43 @@ def render_yield_curve_panel(daily_state: Dict[str, Any]) -> None:
     lines = yield_curve.get("lines", {}) if isinstance(yield_curve, dict) else {}
     chart = _snapshot_curve_chart(tenors, lines)
 
-    table = pd.DataFrame(index=ANCHOR_LABELS, columns=tenors)
-    for idx, (label, key) in enumerate(ANCHOR_ORDER):
-        values = lines.get(key, [])
-        for tenor, value in zip(tenors, values):
-            table.loc[label, tenor] = _format_percent(value, decimals=2)
-
     cols = st.columns([2, 1])
     cols[0].altair_chart(chart, width="stretch")
     cols[0].caption("Anchor points only. Axis is data-range (not zero-based).")
-    cols[1].dataframe(table, width="stretch")
+    rows = yield_curve.get("table_rows", []) if isinstance(yield_curve.get("table_rows"), list) else []
+    table_df = pd.DataFrame(
+        [
+            {
+                "Tenor": row.get("tenor"),
+                "Start of Year": row.get("start_of_year"),
+                "6M": row.get("last_6m"),
+                "1M": row.get("last_month"),
+                "1W": row.get("last_week"),
+                "Current": row.get("current"),
+                "Δ1W (bps)": row.get("weekly_change_bps"),
+                "Δ1M (bps)": row.get("change_1m_bps"),
+                "Δ6M (bps)": row.get("change_6m_bps"),
+                "ΔYTD (bps)": row.get("change_ytd_bps"),
+            }
+            for row in rows
+        ]
+    )
+    delta_cols = ["Δ1W (bps)", "Δ1M (bps)", "Δ6M (bps)", "ΔYTD (bps)"]
+    styler = _style_magnitude(table_df, delta_cols).format(
+        {
+            "Start of Year": _percent_formatter(2),
+            "6M": _percent_formatter(2),
+            "1M": _percent_formatter(2),
+            "1W": _percent_formatter(2),
+            "Current": _percent_formatter(2),
+            "Δ1W (bps)": _bps_formatter(1),
+            "Δ1M (bps)": _bps_formatter(1),
+            "Δ6M (bps)": _bps_formatter(1),
+            "ΔYTD (bps)": _bps_formatter(1),
+        },
+        na_rep=MISSING_DISPLAY,
+    )
+    cols[1].dataframe(styler, width="stretch")
 
 
 def render_real_rates_panel(daily_state: Dict[str, Any]) -> None:
@@ -459,16 +442,53 @@ def render_real_rates_panel(daily_state: Dict[str, Any]) -> None:
             table.append(
                 {
                     "Tenor": row.get("tenor"),
-                    "Start of Year": _format_percent(row.get("start_of_year"), decimals=2),
-                    "1M": _format_percent(row.get("last_month"), decimals=2),
-                    "1W": _format_percent(row.get("last_week"), decimals=2),
-                    "Current": _format_percent(row.get("current"), decimals=2),
+                    "Start of Year": row.get("start_of_year"),
+                    "6M": row.get("last_6m"),
+                    "1M": row.get("last_month"),
+                    "1W": row.get("last_week"),
+                    "Current": row.get("current"),
+                    "Δ1W (bps)": row.get("change_1w_bps"),
+                    "Δ1M (bps)": row.get("change_1m_bps"),
+                    "Δ6M (bps)": row.get("change_6m_bps"),
+                    "ΔYTD (bps)": row.get("change_ytd_bps"),
                 }
             )
         return pd.DataFrame(table)
 
-    cols[1].dataframe(_table_from_rows(real_rows), width="stretch")
-    st.dataframe(_table_from_rows(breakeven_rows), width="stretch")
+    delta_cols = ["Δ1W (bps)", "Δ1M (bps)", "Δ6M (bps)", "ΔYTD (bps)"]
+    real_df = _table_from_rows(real_rows)
+    real_styler = _style_magnitude(real_df, delta_cols).format(
+        {
+            "Start of Year": _percent_formatter(2),
+            "6M": _percent_formatter(2),
+            "1M": _percent_formatter(2),
+            "1W": _percent_formatter(2),
+            "Current": _percent_formatter(2),
+            "Δ1W (bps)": _bps_formatter(1),
+            "Δ1M (bps)": _bps_formatter(1),
+            "Δ6M (bps)": _bps_formatter(1),
+            "ΔYTD (bps)": _bps_formatter(1),
+        },
+        na_rep=MISSING_DISPLAY,
+    )
+    cols[1].dataframe(real_styler, width="stretch")
+
+    breakeven_df = _table_from_rows(breakeven_rows)
+    breakeven_styler = _style_magnitude(breakeven_df, delta_cols).format(
+        {
+            "Start of Year": _percent_formatter(2),
+            "6M": _percent_formatter(2),
+            "1M": _percent_formatter(2),
+            "1W": _percent_formatter(2),
+            "Current": _percent_formatter(2),
+            "Δ1W (bps)": _bps_formatter(1),
+            "Δ1M (bps)": _bps_formatter(1),
+            "Δ6M (bps)": _bps_formatter(1),
+            "ΔYTD (bps)": _bps_formatter(1),
+        },
+        na_rep=MISSING_DISPLAY,
+    )
+    st.dataframe(breakeven_styler, width="stretch")
 
     driver = infl.get("driver_read")
     if isinstance(driver, str):
@@ -490,7 +510,7 @@ def render_real_rates_panel(daily_state: Dict[str, Any]) -> None:
 
 
 def render_policy_futures_panel(daily_state: Dict[str, Any]) -> None:
-    st.header("Policy Futures")
+    st.header("Policy Futures (Evidence-Only)")
     futures = _get_block(daily_state, "policy_futures_curve")
     if not futures:
         st.info("policy_futures_curve data not available.")
@@ -508,15 +528,15 @@ def render_policy_futures_panel(daily_state: Dict[str, Any]) -> None:
     for label, key in ANCHOR_ORDER:
         series = curve_lines.get(key, [])
         for display, value in zip(display_labels, series):
-            rows.append({"Contract": display, "Snapshot": label, "Implied Rate": value})
+            rows.append({"Contract": display, "Snapshot": label, "Price": value})
     df = pd.DataFrame(rows)
-    domain = _calc_domain(df["Implied Rate"].tolist())
+    domain = _calc_domain(df["Price"].tolist())
     curve_chart = (
         alt.Chart(df)
         .mark_line(point=True, interpolate="linear")
         .encode(
             x=alt.X("Contract:N", sort=display_labels, title="Contract"),
-            y=alt.Y("Implied Rate:Q", title="Implied Rate (%)", scale=alt.Scale(domain=domain)),
+            y=alt.Y("Price:Q", title="Price", scale=alt.Scale(domain=domain)),
             color=alt.Color(
                 "Snapshot:N",
                 sort=ANCHOR_LABELS,
@@ -527,26 +547,13 @@ def render_policy_futures_panel(daily_state: Dict[str, Any]) -> None:
                 sort=ANCHOR_LABELS,
                 scale=alt.Scale(domain=ANCHOR_LABELS, range=[SNAPSHOT_STYLE[s] for s in ANCHOR_LABELS]),
             ),
-            tooltip=["Contract", "Snapshot", "Implied Rate"],
-        )
-    )
-
-    change_vs_now = curve_lines.get("change_vs_now_bps", [])
-    change_df = pd.DataFrame({"Contract": display_labels, "Change vs Now (bps)": change_vs_now})
-    change_chart = (
-        alt.Chart(change_df)
-        .mark_line(point=True, interpolate="linear")
-        .encode(
-            x=alt.X("Contract:N", sort=display_labels, title="Contract"),
-            y=alt.Y("Change vs Now (bps):Q", title="Cumulative Cuts vs Now (bps)"),
-            tooltip=["Contract", "Change vs Now (bps)"],
+            tooltip=["Contract", "Snapshot", "Price"],
         )
     )
 
     cols = st.columns(2)
     cols[0].altair_chart(curve_chart, width="stretch")
     cols[0].caption("Anchor points only. Axis is data-range (not zero-based).")
-    cols[1].altair_chart(change_chart, width="stretch")
 
     contracts = futures.get("contracts", []) if isinstance(futures.get("contracts"), list) else []
     table_cols = {}
@@ -560,12 +567,17 @@ def render_policy_futures_panel(daily_state: Dict[str, Any]) -> None:
             return fmt(value)
         table_cols[header] = [
             _value_or_failed(contract.get("current_price"), lambda v: _format_number(v, decimals=2)),
-            _value_or_failed(contract.get("current_rate_pct"), lambda v: _format_percent(v, decimals=2)),
-            _value_or_failed(contract.get("change_vs_now_bps"), lambda v: _format_bps(v, decimals=1)),
+            _value_or_failed(contract.get("last_week_price"), lambda v: _format_number(v, decimals=2)),
+            _value_or_failed(contract.get("last_month_price"), lambda v: _format_number(v, decimals=2)),
+            _value_or_failed(contract.get("last_6m_price"), lambda v: _format_number(v, decimals=2)),
+            _value_or_failed(contract.get("start_of_year_price"), lambda v: _format_number(v, decimals=2)),
         ]
 
-    table_df = pd.DataFrame(table_cols, index=["Price", "Implied Rate (%)", "Change vs Now (bps)"])
-    st.dataframe(table_df, width="stretch")
+    table_df = pd.DataFrame(
+        table_cols,
+        index=["Current", "1W", "1M", "6M", "SOY"],
+    )
+    cols[1].dataframe(table_df, width="stretch")
 
 
 def render_volatility_panel(daily_state: Dict[str, Any]) -> None:
@@ -582,24 +594,53 @@ def render_volatility_panel(daily_state: Dict[str, Any]) -> None:
         rows.append(
             {
                 "Index": label,
-                "Current": _format_number(volatility.get(key), decimals=2),
-                "1D %": _format_percent(entry.get("1d_pct"), decimals=1),
-                "5D %": _format_percent(entry.get("5d_pct"), decimals=1),
-                "1M %": _format_percent(entry.get("1m_pct"), decimals=1),
-                "6M %": _format_percent(entry.get("6m_pct"), decimals=1),
-                "MOVE/VIX": _format_number(volatility.get("move_vix_ratio"), decimals=2)
-                if label == "MOVE"
-                else "",
-                "GVZ/VIX": _format_number(volatility.get("gvz_vix_ratio"), decimals=2)
-                if label == "GVZ"
-                else "",
-                "OVX/VIX": _format_number(volatility.get("ovx_vix_ratio"), decimals=2)
-                if label == "OVX"
-                else "",
+                "Current": volatility.get(key),
+                "1D %": entry.get("1d_pct"),
+                "5D %": entry.get("5d_pct"),
+                "1M %": entry.get("1m_pct"),
+                "6M %": entry.get("6m_pct"),
+                "MOVE/VIX": volatility.get("move_vix_ratio") if label == "MOVE" else None,
+                "GVZ/VIX": volatility.get("gvz_vix_ratio") if label == "GVZ" else None,
+                "OVX/VIX": volatility.get("ovx_vix_ratio") if label == "OVX" else None,
             }
         )
 
-    st.dataframe(pd.DataFrame(rows), width="stretch")
+    table_df = pd.DataFrame(rows)
+    change_cols = ["1D %", "5D %", "1M %", "6M %"]
+    styler = _style_magnitude(table_df, change_cols).format(
+        {
+            "Current": _number_formatter(2),
+            "1D %": _percent_formatter(1),
+            "5D %": _percent_formatter(1),
+            "1M %": _percent_formatter(1),
+            "6M %": _percent_formatter(1),
+            "MOVE/VIX": _number_formatter(2),
+            "GVZ/VIX": _number_formatter(2),
+            "OVX/VIX": _number_formatter(2),
+        },
+        na_rep=MISSING_DISPLAY,
+    )
+    st.dataframe(styler, width="stretch")
+
+    regime = _get_block(daily_state, "volatility_regime")
+    if regime:
+        zscores = regime.get("zscore_3y", {}) if isinstance(regime.get("zscore_3y"), dict) else {}
+        regime_rows = [
+            {
+                "Segment": "Equity (VIX)",
+                "Regime": regime.get("equity"),
+                "Z-score (3Y)": _format_number(zscores.get("vix"), decimals=2),
+            },
+            {
+                "Segment": "Rates (MOVE)",
+                "Regime": regime.get("rates"),
+                "Z-score (3Y)": _format_number(zscores.get("move"), decimals=2),
+            },
+            {"Segment": "Joint", "Regime": regime.get("joint"), "Z-score (3Y)": MISSING_DISPLAY},
+        ]
+        st.dataframe(pd.DataFrame(regime_rows), width="stretch")
+        if regime.get("boundary_case"):
+            st.caption("Boundary case detected in regime thresholds.")
 
     history = _load_history_state()
     if history:
@@ -612,33 +653,13 @@ def render_volatility_panel(daily_state: Dict[str, Any]) -> None:
             "Volatility Levels (Raw)",
         )
         if raw_chart is not None:
-            ma_rows = []
-            for series_key, label in [("vix", "VIX"), ("move", "MOVE")]:
-                ma_rows += _vol_transform_rows(history, window, series_key, "mean_50", f"{label} MA 50")
-                ma_rows += _vol_transform_rows(history, window, series_key, "mean_200", f"{label} MA 200")
-            ma_df = pd.DataFrame(ma_rows)
-            if not ma_df.empty:
-                ma_df["Date"] = pd.to_datetime(ma_df["Date"], errors="coerce")
-                ma_df = ma_df.dropna(subset=["Date"])
-                ma_chart = (
-                    alt.Chart(ma_df)
-                    .mark_line(interpolate="linear", strokeDash=[4, 3])
-                    .encode(
-                        x=alt.X("Date:T", title="Date"),
-                        y=alt.Y("Value:Q", title="Level"),
-                        color=alt.Color("Series:N"),
-                        tooltip=["Date", "Series", "Value"],
-                    )
-                )
-                st.altair_chart(raw_chart + ma_chart, width="stretch")
-            else:
-                st.altair_chart(raw_chart, width="stretch")
+            st.altair_chart(raw_chart, width="stretch")
         else:
             st.info("Volatility history not available.")
 
         z_rows = []
-        z_rows += _vol_transform_rows(history, window, "vix", "zscore_200", "VIX Z (200d)")
-        z_rows += _vol_transform_rows(history, window, "move", "zscore_200", "MOVE Z (200d)")
+        z_rows += _transform_rows(history, "vix", "zscore_3y", window, "VIX Z (3Y)")
+        z_rows += _transform_rows(history, "move", "zscore_3y", window, "MOVE Z (3Y)")
         z_df = pd.DataFrame(z_rows)
         if not z_df.empty:
             z_df["Date"] = pd.to_datetime(z_df["Date"], errors="coerce")
@@ -649,7 +670,7 @@ def render_volatility_panel(daily_state: Dict[str, Any]) -> None:
                 .mark_line(interpolate="linear")
                 .encode(
                     x=alt.X("Date:T", title="Date"),
-                    y=alt.Y("Value:Q", title="Z-score (200d)"),
+                    y=alt.Y("Value:Q", title="Z-score (3Y)"),
                     color=alt.Color("Series:N"),
                     tooltip=["Date", "Series", "Value"],
                 )
@@ -657,7 +678,8 @@ def render_volatility_panel(daily_state: Dict[str, Any]) -> None:
             )
             st.altair_chart(z_chart + zero_line, width="stretch")
 
-        ratio_rows = _vol_simple_rows(history, window, "move_vix_ratio", "MOVE/VIX Ratio")
+        ratio_rows = _transform_rows(history, "move", "pct_of_avg_3y", window, "MOVE % of Avg (3Y)")
+        ratio_rows += _transform_rows(history, "vix", "pct_of_avg_3y", window, "VIX % of Avg (3Y)")
         ratio_df = pd.DataFrame(ratio_rows)
         if not ratio_df.empty:
             ratio_df["Date"] = pd.to_datetime(ratio_df["Date"], errors="coerce")
@@ -667,15 +689,15 @@ def render_volatility_panel(daily_state: Dict[str, Any]) -> None:
                 .mark_line(interpolate="linear")
                 .encode(
                     x=alt.X("Date:T", title="Date"),
-                    y=alt.Y("Value:Q", title="MOVE/VIX Ratio"),
+                    y=alt.Y("Value:Q", title="Percent of Avg"),
                     color=alt.Color("Series:N"),
                     tooltip=["Date", "Series", "Value"],
                 )
-                .properties(title="Rates vs Equity Volatility")
+                .properties(title="Volatility Percent of Avg (3Y)")
             )
             st.altair_chart(ratio_chart, width="stretch")
 
-        spread_rows = _vol_simple_rows(history, window, "move_vix_z_spread", "MOVE Z - VIX Z")
+        spread_rows = _cross_asset_rows(history, "move_vix_z_spread", window, "MOVE Z - VIX Z")
         spread_df = pd.DataFrame(spread_rows)
         if not spread_df.empty:
             spread_df["Date"] = pd.to_datetime(spread_df["Date"], errors="coerce")
@@ -711,13 +733,26 @@ def render_liquidity_panel(daily_state: Dict[str, Any]) -> None:
         table_rows.append(
             {
                 "Series": label,
-                "Level": _format_number(entry.get("level"), decimals=2),
-                "Δ1W": _format_number(entry.get("change_1w"), decimals=2),
-                "Δ1M": _format_number(entry.get("change_1m"), decimals=2),
-                "ΔSOY": _format_number(entry.get("change_ytd"), decimals=2),
+                "Level": entry.get("level"),
+                "Δ1W": entry.get("change_1w"),
+                "Δ1M": entry.get("change_1m"),
+                "Δ6M": entry.get("change_6m"),
+                "ΔSOY": entry.get("change_ytd"),
             }
         )
-    st.dataframe(pd.DataFrame(table_rows), width="stretch")
+    table_df = pd.DataFrame(table_rows)
+    delta_cols = ["Δ1W", "Δ1M", "Δ6M", "ΔSOY"]
+    styler = _style_magnitude(table_df, delta_cols).format(
+        {
+            "Level": _number_formatter(2),
+            "Δ1W": _number_formatter(2),
+            "Δ1M": _number_formatter(2),
+            "Δ6M": _number_formatter(2),
+            "ΔSOY": _number_formatter(2),
+        },
+        na_rep=MISSING_DISPLAY,
+    )
+    st.dataframe(styler, width="stretch")
 
     history = _load_history_state()
     if history:
@@ -735,7 +770,7 @@ def render_liquidity_panel(daily_state: Dict[str, Any]) -> None:
 
 
 def render_labor_panel(daily_state: Dict[str, Any]) -> None:
-    st.header("Labor Market")
+    st.header("Labor Market (Evidence-Only)")
     labor = _get_block(daily_state, "labor_market")
     if not labor:
         st.info("labor_market data not available.")
@@ -765,11 +800,144 @@ def render_labor_panel(daily_state: Dict[str, Any]) -> None:
 
 
 def render_fx_panel(daily_state: Dict[str, Any]) -> None:
-    st.header("FX Conditions")
+    st.header("FX Conditions (Evidence-Only)")
     fx = _get_block(daily_state, "fx")
     if not fx:
         st.info("fx data not available.")
         return
+
+    dxy_block = fx.get("dxy", {}) if isinstance(fx.get("dxy"), dict) else {}
+    dxy_anchors = dxy_block.get("anchors", {}) if isinstance(dxy_block.get("anchors"), dict) else {}
+    dxy_changes = dxy_block.get("changes_pct", {}) if isinstance(dxy_block.get("changes_pct"), dict) else {}
+    dxy_table = [
+        {
+            "Series": dxy_block.get("label", "DXY"),
+            "Current": dxy_anchors.get("current"),
+            "1D %": dxy_changes.get("1d"),
+            "5D %": dxy_changes.get("5d"),
+            "1M %": dxy_changes.get("1m"),
+            "6M %": dxy_changes.get("6m"),
+        }
+    ]
+    dxy_df = pd.DataFrame(dxy_table)
+    dxy_change_cols = ["1D %", "5D %", "1M %", "6M %"]
+    dxy_styler = _style_magnitude(dxy_df, dxy_change_cols).format(
+        {
+            "Current": _number_formatter(2),
+            "1D %": _percent_formatter(1),
+            "5D %": _percent_formatter(1),
+            "1M %": _percent_formatter(1),
+            "6M %": _percent_formatter(1),
+        },
+        na_rep=MISSING_DISPLAY,
+    )
+    st.dataframe(dxy_styler, width="stretch")
+
+    rate_block = fx.get("rate_differentials", {}) if isinstance(fx.get("rate_differentials"), dict) else {}
+    rate_rows = rate_block.get("rows", []) if isinstance(rate_block.get("rows"), list) else []
+    if rate_rows:
+        rate_table = []
+        for row in rate_rows:
+            rate_table.append(
+                {
+                    "Currency": row.get("currency"),
+                    "Policy Rate": row.get("policy_rate"),
+                    "Fed Funds": row.get("fed_funds"),
+                    "Diff (bps)": row.get("differential_bps"),
+                    "Data Quality": row.get("data_quality"),
+                }
+            )
+        st.subheader("Rate Differentials vs Fed (Evidence-Only)")
+        rate_df = pd.DataFrame(rate_table)
+        rate_styler = _style_magnitude(rate_df, ["Diff (bps)"]).format(
+            {
+                "Policy Rate": _number_formatter(2),
+                "Fed Funds": _number_formatter(2),
+                "Diff (bps)": _bps_formatter(1),
+            },
+            na_rep=MISSING_DISPLAY,
+        )
+        st.dataframe(rate_styler, width="stretch")
+
+    matrix = fx.get("matrix_1m_pct", {}) if isinstance(fx.get("matrix_1m_pct"), dict) else {}
+    matrix_rows = _matrix_rows(matrix)
+    if matrix_rows:
+        df = pd.DataFrame(matrix_rows)
+        df["Value"] = pd.to_numeric(df["Value"], errors="coerce")
+        max_abs = df["Value"].abs().max()
+        if pd.notna(max_abs) and max_abs > 0:
+            heatmap = (
+                alt.Chart(df)
+                .mark_rect()
+                .encode(
+                    x=alt.X("Quote:N", sort=matrix.get("currencies", []), title="Quote"),
+                    y=alt.Y("Base:N", sort=matrix.get("currencies", []), title="Base"),
+                    color=alt.Color(
+                        "Value:Q",
+                        scale=alt.Scale(domain=[-max_abs, max_abs], scheme="blueorange"),
+                        title="1M % Change",
+                    ),
+                    tooltip=["Base", "Quote", "Value"],
+                )
+                .properties(title="FX Matrix (1M % Change)")
+            )
+            st.altair_chart(heatmap, width="stretch")
+        else:
+            pivot = df.pivot(index="Base", columns="Quote", values="Value")
+            table = pivot.applymap(lambda v: _format_percent(v, decimals=2) if pd.notna(v) else MISSING_DISPLAY)
+            st.subheader("FX Matrix (1M % Change)")
+            st.dataframe(table, width="stretch")
+
+    baskets = fx.get("risk_baskets", {}) if isinstance(fx.get("risk_baskets"), dict) else {}
+    if baskets:
+        def _basket_row(label: str, entry: Dict[str, Any]) -> Dict[str, Any]:
+            anchors = entry.get("anchors", {}) if isinstance(entry.get("anchors"), dict) else {}
+            return {
+                "Basket": label,
+                "SOY": _format_number(anchors.get("start_of_year"), decimals=2),
+                "6M": _format_number(anchors.get("last_6m"), decimals=2),
+                "1M": _format_number(anchors.get("last_month"), decimals=2),
+                "1W": _format_number(anchors.get("last_week"), decimals=2),
+                "Current": _format_number(anchors.get("current"), decimals=2),
+                "Data Quality": entry.get("data_quality"),
+            }
+
+        rows = [
+            _basket_row("Risk-On", baskets.get("risk_on", {})),
+            _basket_row("Risk-Off", baskets.get("risk_off", {})),
+        ]
+        spread_anchors = baskets.get("spread", {}).get("anchors", {})
+        rows.append(
+            {
+                "Basket": "Spread (On - Off)",
+                "SOY": _format_number(spread_anchors.get("start_of_year"), decimals=2),
+                "6M": _format_number(spread_anchors.get("last_6m"), decimals=2),
+                "1M": _format_number(spread_anchors.get("last_month"), decimals=2),
+                "1W": _format_number(spread_anchors.get("last_week"), decimals=2),
+                "Current": _format_number(spread_anchors.get("current"), decimals=2),
+                "Data Quality": MISSING_DISPLAY,
+            }
+        )
+        st.subheader("Risk-On vs Risk-Off FX Basket (Index)")
+        st.dataframe(pd.DataFrame(rows), width="stretch")
+
+    fx_vol = _get_block(daily_state, "fx_volatility")
+    if fx_vol:
+        vol_entries = fx_vol.get("entries", []) if isinstance(fx_vol.get("entries"), list) else []
+        if vol_entries:
+            vol_rows = []
+            for entry in vol_entries:
+                vol_rows.append(
+                    {
+                        "Pair": entry.get("pair"),
+                        "Realized Vol (20D) %": _format_percent(entry.get("realized_vol_20d_pct"), decimals=2),
+                        "Z-score (3Y)": _format_number(entry.get("zscore_3y"), decimals=2),
+                        "Regime": entry.get("regime"),
+                        "Data Quality": entry.get("data_quality"),
+                    }
+                )
+            st.subheader("FX Volatility (Realized 20D)")
+            st.dataframe(pd.DataFrame(vol_rows), width="stretch")
 
     history = _load_history_state()
     if history:
@@ -803,7 +971,7 @@ def render_fx_panel(daily_state: Dict[str, Any]) -> None:
 
 
 def render_credit_panel(daily_state: Dict[str, Any]) -> None:
-    st.header("Credit Detail")
+    st.header("Credit Detail (Evidence-Only)")
     credit = _get_block(daily_state, "credit_transmission")
     if not credit:
         st.info("credit_transmission data not available.")
@@ -813,20 +981,41 @@ def render_credit_panel(daily_state: Dict[str, Any]) -> None:
         {
             "Series": "IG OAS",
             "Current": _format_number(credit.get("ig_oas_current"), decimals=2),
-            "Weekly Change (bps)": _format_bps(credit.get("ig_oas_weekly_change_bps"), decimals=1),
+            "Weekly Change (bps)": credit.get("ig_oas_weekly_change_bps"),
         },
         {
             "Series": "HY OAS",
             "Current": _format_number(credit.get("hy_oas_current"), decimals=2),
-            "Weekly Change (bps)": _format_bps(credit.get("hy_oas_weekly_change_bps"), decimals=1),
+            "Weekly Change (bps)": credit.get("hy_oas_weekly_change_bps"),
         },
         {
             "Series": "10Y Treasury",
             "Current": _format_percent(credit.get("treasury_10y_current"), decimals=2),
-            "Weekly Change (bps)": _format_bps(credit.get("treasury_10y_weekly_change_bps"), decimals=1),
+            "Weekly Change (bps)": credit.get("treasury_10y_weekly_change_bps"),
         },
     ]
-    st.dataframe(pd.DataFrame(rows), width="stretch")
+    credit_df = pd.DataFrame(rows)
+    credit_styler = _style_magnitude(credit_df, ["Weekly Change (bps)"]).format(
+        {
+            "Weekly Change (bps)": _bps_formatter(1),
+        },
+        na_rep=MISSING_DISPLAY,
+    )
+    st.dataframe(credit_styler, width="stretch")
+
+    history = _load_history_state()
+    if history:
+        window = _select_window("Credit History Window", key="credit_history_window")
+        chart = _history_chart(
+            history,
+            window,
+            {"ig_oas": "IG OAS", "hy_oas": "HY OAS"},
+            "Credit Spreads History",
+        )
+        if chart is not None:
+            st.altair_chart(chart, width="stretch")
+        else:
+            st.info("Credit history not available.")
 
 
 def render_cross_signals(daily_state: Dict[str, Any]) -> None:
@@ -838,14 +1027,14 @@ def render_cross_signals(daily_state: Dict[str, Any]) -> None:
     vol_cross = _get_block(daily_state, "vol_credit_cross")
 
     cols = st.columns(3)
-    cols[0].metric("Spot Stance", policy.get("spot_stance", "Unavailable"))
-    cols[1].metric("Expected Direction", policy_curve.get("expected_direction", "Unavailable"))
-    cols[2].metric("Liquidity", liquidity_curve.get("expected_liquidity", "Unavailable"))
+    cols[0].metric("Spot Stance", policy.get("spot_stance") or MISSING_DISPLAY)
+    cols[1].metric("Expected Direction", policy_curve.get("expected_direction") or MISSING_DISPLAY)
+    cols[2].metric("Liquidity", liquidity_curve.get("expected_liquidity") or MISSING_DISPLAY)
 
     with st.expander("Explanations"):
-        st.write(policy.get("explanation", "Unavailable"))
-        st.write(policy_curve.get("explanation", "Unavailable"))
-        st.write(liquidity_curve.get("explanation", "Unavailable"))
+        st.write(policy.get("explanation") or MISSING_DISPLAY)
+        st.write(policy_curve.get("explanation") or MISSING_DISPLAY)
+        st.write(liquidity_curve.get("explanation") or MISSING_DISPLAY)
 
     disagreement_rows = []
     for label, key in [
@@ -857,15 +1046,17 @@ def render_cross_signals(daily_state: Dict[str, Any]) -> None:
         disagreement_rows.append(
             {
                 "Pair": label,
-                "Flag": entry.get("flag", "Unavailable"),
-                "Explanation": entry.get("explanation", "Unavailable"),
+                "Flag": entry.get("flag", MISSING_DISPLAY),
+                "Explanation": entry.get("explanation") or MISSING_DISPLAY,
             }
         )
     st.dataframe(pd.DataFrame(disagreement_rows), width="stretch")
 
     if vol_cross:
         st.subheader("Volatility vs Credit")
-        st.write(f"{vol_cross.get('label', 'Unavailable')}: {vol_cross.get('explanation', 'Unavailable')}")
+        label = vol_cross.get("label") or MISSING_DISPLAY
+        explanation = vol_cross.get("explanation") or MISSING_DISPLAY
+        st.write(f"{label}: {explanation}")
 
 
 def render_system_health(daily_state: Dict[str, Any]) -> None:
@@ -890,9 +1081,21 @@ def render_system_health(daily_state: Dict[str, Any]) -> None:
         )
 
     st.dataframe(pd.DataFrame(rows), width="stretch")
-    st.write(f"Last updated: {health.get('generated_at', 'Unavailable')}")
-    st.write(f"Age: {health.get('age_human', 'Unavailable')}")
-    st.write(f"Failed series: {health.get('failed_series', 'Unavailable')} / {health.get('total_series', 'Unavailable')}")
+    st.write(f"Last updated: {health.get('generated_at') or MISSING_DISPLAY}")
+    st.write(f"Age: {health.get('age_human') or MISSING_DISPLAY}")
+    failed_series = health.get("failed_series")
+    total_series = health.get("total_series")
+    if failed_series is None or total_series is None:
+        st.write(f"Failed series: {MISSING_DISPLAY}")
+    else:
+        st.write(f"Failed series: {failed_series} / {total_series}")
+    history_flag = health.get("history_state_available")
+    if history_flag is not None:
+        st.write(f"History state: {'Available' if history_flag else 'Missing'}")
+    failed_list = health.get("failed_series_list")
+    if isinstance(failed_list, list) and failed_list:
+        st.caption("Failed series list:")
+        st.caption(", ".join(str(item) for item in failed_list))
 
 
 def render_sidebar_reasoning() -> None:
@@ -935,24 +1138,35 @@ def main() -> None:
 
     render_sidebar_reasoning()
 
-    tab_rates, tab_policy, tab_risk, tab_health = st.tabs(
-        ["📈 Rates & Inflation", "🏦 Policy & Liquidity", "⚡ Volatility & Risk", "🛠 System Health"]
+    tab_rates, tab_policy, tab_labor, tab_fx, tab_risk, tab_health = st.tabs(
+        [
+            "📈 Rates & Inflation",
+            "🏦 Policy & Liquidity",
+            "👷 Labor Market",
+            "💱 FX Conditions",
+            "⚡ Volatility & Risk",
+            "🛠 System Health",
+        ]
     )
 
     with tab_rates:
         render_yield_curve_panel(daily_state)
         render_real_rates_panel(daily_state)
-        render_labor_panel(daily_state)
 
     with tab_policy:
         render_policy_futures_panel(daily_state)
         render_liquidity_panel(daily_state)
         render_cross_signals(daily_state)
 
+    with tab_labor:
+        render_labor_panel(daily_state)
+
+    with tab_fx:
+        render_fx_panel(daily_state)
+
     with tab_risk:
         render_volatility_panel(daily_state)
         render_credit_panel(daily_state)
-        render_fx_panel(daily_state)
 
     with tab_health:
         render_system_health(daily_state)

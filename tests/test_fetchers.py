@@ -11,6 +11,7 @@ from Data import (
     fetch_labor_market,
     fetch_liquidity,
     fetch_policy,
+    fetch_policy_rates,
     fetch_policy_witnesses,
     fetch_vol,
     fetch_yields,
@@ -45,6 +46,7 @@ def _patch_fred_fetchers(monkeypatch):
         fetch_labor_market,
         fetch_global_policy,
         fetch_inflation_witnesses,
+        fetch_policy_rates,
     ):
         if hasattr(module, "_fetch_fred_series"):
             monkeypatch.setattr(module, "_fetch_fred_series", _ok)
@@ -60,6 +62,14 @@ def test_policy_fetchers_shape():
     assert_ingestion_shape(fetch_policy.fetch_effr())
     assert_ingestion_shape(fetch_inflation.fetch_cpi_level())
     assert_ingestion_shape(fetch_policy_witnesses.fetch_sofr())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_eur())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_gbp())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_jpy())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_chf())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_aud())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_nzd())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_cad())
+    assert_ingestion_shape(fetch_policy_rates.fetch_policy_rate_cnh())
 
 
 def test_inflation_witness_fetchers_shape():
@@ -119,6 +129,13 @@ def test_fx_fetchers_shape():
     assert_ingestion_shape(fetch_fx.fetch_eurusd())
     assert_ingestion_shape(fetch_fx.fetch_gbpusd())
     assert_ingestion_shape(fetch_fx.fetch_usdcad())
+    assert_ingestion_shape(fetch_fx.fetch_audusd())
+    assert_ingestion_shape(fetch_fx.fetch_nzdusd())
+    assert_ingestion_shape(fetch_fx.fetch_usdnok())
+    assert_ingestion_shape(fetch_fx.fetch_usdmxn())
+    assert_ingestion_shape(fetch_fx.fetch_usdzar())
+    assert_ingestion_shape(fetch_fx.fetch_usdchf())
+    assert_ingestion_shape(fetch_fx.fetch_usdcnh())
 
 
 def test_policy_fetcher_failure_returns_failed(monkeypatch):
@@ -185,11 +202,11 @@ def test_liquidity_snapshots_use_calendar_year():
         (datetime(2025, 1, 7), 6.0),
     ]
     snapshots = select_snapshots(points, current_year=2025)
-    assert snapshots["start_of_year"][0].year == 2024
-    assert snapshots["start_of_year"][1] == 1.0
+    assert snapshots["start_of_year"][0].year == 2025
+    assert snapshots["start_of_year"][1] == 2.0
 
 
 def test_liquidity_snapshots_use_trading_day_offset():
     points = [(datetime(2025, 1, day), float(day)) for day in range(1, 8)]
     snapshots = select_snapshots(points, current_year=2025)
-    assert snapshots["last_week"] == points[0]
+    assert snapshots["last_week"] == points[1]

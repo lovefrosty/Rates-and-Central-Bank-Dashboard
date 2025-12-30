@@ -32,15 +32,17 @@ def _snapshots(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
     meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
     current = meta.get("current", entry.get("value"))
     last_week = meta.get("last_week")
+    last_month = meta.get("last_month")
+    last_6m = meta.get("last_6m")
     start_of_year = meta.get("start_of_year")
     change_1m = meta.get("1m_change")
-    last_month = None
-    if current is not None and change_1m is not None:
+    if last_month is None and current is not None and change_1m is not None:
         last_month = current - change_1m
     return {
         "current": None if current is None else float(current),
         "last_week": None if last_week is None else float(last_week),
         "last_month": None if last_month is None else float(last_month),
+        "last_6m": None if last_6m is None else float(last_6m),
         "start_of_year": None if start_of_year is None else float(start_of_year),
     }
 

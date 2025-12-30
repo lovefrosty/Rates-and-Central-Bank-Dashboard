@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from Data.utils.fred_provider import _try_fred_http, _try_openbb_fred
-from Data.utils.snapshot_selection import anchor_window_start_iso, select_prior, select_snapshots
+from Data.utils.snapshot_selection import anchor_window_start_iso, select_snapshots
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -89,9 +89,10 @@ def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]
         raise ValueError("no observations")
     current_date, current_value = current
     last_week = snapshots["last_week"]
+    last_month = snapshots["last_month"]
+    last_6m = snapshots["last_6m"]
     start_of_year = snapshots["start_of_year"]
-    month_ago = select_prior(points, current_date, days=30)
-    change_1m = None if month_ago is None else current_value - month_ago[1]
+    change_1m = None if last_month is None else current_value - last_month[1]
     roc_5d = None
     if last_week is not None and last_week[1] not in (None, 0):
         roc_5d = (current_value - last_week[1]) / last_week[1] * 100
@@ -99,11 +100,15 @@ def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]
         "series_id": series_id,
         "start_of_year": None if start_of_year is None else start_of_year[1],
         "last_week": None if last_week is None else last_week[1],
+        "last_month": None if last_month is None else last_month[1],
+        "last_6m": None if last_6m is None else last_6m[1],
         "current": current_value,
         "1m_change": change_1m,
         "5d_roc": roc_5d,
         "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
         "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
+        "as_of_last_month": _format_date(None if last_month is None else last_month[0]),
+        "as_of_last_6m": _format_date(None if last_6m is None else last_6m[0]),
         "as_of_current": _format_date(current_date),
     }
     return current_value, meta, status, source

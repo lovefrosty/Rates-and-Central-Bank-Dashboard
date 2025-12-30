@@ -41,6 +41,16 @@ def _yoy_pct(current: Optional[float], year_ago: Optional[float]) -> Optional[fl
     return (current / year_ago - 1.0) * 100
 
 
+def _inflation_proxy_meta(proxy_type: str, current: Optional[float], year_ago: Optional[float]) -> Dict[str, Any]:
+    confidence = "MEDIUM" if current is not None and year_ago is not None else "LOW"
+    return {
+        "type": proxy_type,
+        "orientation": "backward-looking",
+        "confidence": confidence,
+        "fallback_used": False,
+    }
+
+
 def build_inflation_witnesses(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     headline_entry = _get_entry(raw_state, "cpi_headline")
     core_entry = _get_entry(raw_state, "cpi_core")
@@ -55,6 +65,10 @@ def build_inflation_witnesses(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "cpi_core_index_current": core_current,
         "cpi_headline_yoy_pct": _yoy_pct(headline_current, headline_year_ago),
         "cpi_core_yoy_pct": _yoy_pct(core_current, core_year_ago),
+        "inflation_proxy": {
+            "cpi_headline_yoy": _inflation_proxy_meta("CPI_YoY", headline_current, headline_year_ago),
+            "cpi_core_yoy": _inflation_proxy_meta("Core_CPI", core_current, core_year_ago),
+        },
         "data_quality": {
             "cpi_headline": _quality(headline_entry.get("status"), headline_current, headline_year_ago),
             "cpi_core": _quality(core_entry.get("status"), core_current, core_year_ago),

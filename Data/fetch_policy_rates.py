@@ -1,9 +1,22 @@
-"""Policy witness data fetchers."""
-from datetime import date, datetime, timedelta, timezone
+"""Foreign policy rate fetchers for FX differentials."""
+from datetime import date, datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from Data.utils.fred_provider import _try_fred_http, _try_openbb_fred
 from Data.utils.snapshot_selection import anchor_window_start_iso, select_snapshots
+
+
+POLICY_RATE_SERIES = {
+    "eur": "ECBDFR",
+    "gbp": None,
+    "jpy": None,
+    "chf": None,
+    "aud": None,
+    "nzd": None,
+    "cad": None,
+    "cnh": None,
+}
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -92,10 +105,6 @@ def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]
     last_month = snapshots["last_month"]
     last_6m = snapshots["last_6m"]
     start_of_year = snapshots["start_of_year"]
-    change_1m = None if last_month is None else current_value - last_month[1]
-    roc_5d = None
-    if last_week is not None and last_week[1] not in (None, 0):
-        roc_5d = (current_value - last_week[1]) / last_week[1] * 100
     meta = {
         "series_id": series_id,
         "start_of_year": None if start_of_year is None else start_of_year[1],
@@ -103,8 +112,6 @@ def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]
         "last_month": None if last_month is None else last_month[1],
         "last_6m": None if last_6m is None else last_6m[1],
         "current": current_value,
-        "1m_change": change_1m,
-        "5d_roc": roc_5d,
         "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
         "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
         "as_of_last_month": _format_date(None if last_month is None else last_month[0]),
@@ -114,9 +121,15 @@ def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]
     return current_value, meta, status, source
 
 
-def fetch_sofr() -> Dict[str, Any]:
-    """Fetch SOFR level (latest observation)."""
-    series_id = "SOFR"
+def _fetch_policy_rate(series_id: Optional[str]) -> Dict[str, Any]:
+    if not series_id:
+        return _ingestion_object(
+            value=None,
+            status="FAILED",
+            source=None,
+            error="policy rate series_id not configured",
+            extra={"series_id": series_id},
+        )
     try:
         value, meta, status, source = _fetch_fred_series(series_id)
         return _ingestion_object(value=value, status=status, source=source, extra=meta)
@@ -128,3 +141,43 @@ def fetch_sofr() -> Dict[str, Any]:
             error=f"{series_id} fetch failed: {exc}",
             extra={"series_id": series_id},
         )
+
+
+def fetch_policy_rate_eur() -> Dict[str, Any]:
+    """Fetch EUR policy proxy (ECB deposit facility rate)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["eur"])
+
+
+def fetch_policy_rate_gbp() -> Dict[str, Any]:
+    """Fetch GBP policy proxy (series not configured)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["gbp"])
+
+
+def fetch_policy_rate_jpy() -> Dict[str, Any]:
+    """Fetch JPY policy proxy (series not configured)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["jpy"])
+
+
+def fetch_policy_rate_chf() -> Dict[str, Any]:
+    """Fetch CHF policy proxy (series not configured)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["chf"])
+
+
+def fetch_policy_rate_aud() -> Dict[str, Any]:
+    """Fetch AUD policy proxy (series not configured)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["aud"])
+
+
+def fetch_policy_rate_nzd() -> Dict[str, Any]:
+    """Fetch NZD policy proxy (series not configured)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["nzd"])
+
+
+def fetch_policy_rate_cad() -> Dict[str, Any]:
+    """Fetch CAD policy proxy (series not configured)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["cad"])
+
+
+def fetch_policy_rate_cnh() -> Dict[str, Any]:
+    """Fetch CNH policy proxy (series not configured)."""
+    return _fetch_policy_rate(POLICY_RATE_SERIES["cnh"])

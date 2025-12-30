@@ -7,13 +7,15 @@
 - UI: `UI/` (Streamlit entrypoints and components, read-only consumers).
 - Tests: `tests/`.
 - Orchestrator: `update.py` (raw_state build, analytics writers, resolvers).
+- History: `History/` (builds `signals/history_state.json`, and history-derived daily-state writers).
 
 ## Raw State Schema / Validator
 - Schema and validator: `Signals/raw_state_schema.py` (expected keys + ingestion fields).
 - Raw-state structural validation used by orchestrator: `Signals/validate.py`.
 
 ## Orchestration Flow (current)
-- `update.py` builds raw_state, writes `signals/raw_state.json`, then calls analytics writers and resolvers to update `signals/daily_state.json`.
+- `update.py` builds raw_state, writes `signals/raw_state.json`, then calls analytics writers, history-derived writers, and resolvers to update `signals/daily_state.json`.
+- `history_update.py` writes `signals/history_state.json` (time-series only).
 
 ## Snapshot Helper
 - Shared snapshot selection helper: `Data/utils/snapshot_selection.py`.
@@ -32,6 +34,9 @@
   - `Analytics/fx_panel.py`
   - `Analytics/system_health.py`
   - `Analytics/yield_curve_analytics.py`
+- History-derived writers:
+  - `History/volatility_regime.py`
+  - `History/fx_volatility.py`
 - Resolvers (examples):
   - `Signals/resolve_policy.py`
   - `Signals/resolve_policy_curve.py`

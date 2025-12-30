@@ -1,7 +1,7 @@
 """System health analytics from raw_state.json."""
 from datetime import datetime, timezone
-from pathlib import Path
 import json
+from pathlib import Path
 from typing import Any, Dict, Iterable, Tuple
 
 from Signals import state_paths
@@ -16,6 +16,7 @@ BLOCKS = {
     "Labor": ("labor_market",),
     "Credit": ("credit_spreads",),
     "Global Policy": ("global_policy",),
+    "FX": ("fx",),
 }
 
 
@@ -96,6 +97,17 @@ def build_system_health(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         failed_total += failed
         series_total += total
 
+    failed_list: list[str] = []
+    for label, (section_key,) in BLOCKS.items():
+        section = raw_state.get(section_key, {})
+        for item in _iter_ingestion_items(section):
+            if isinstance(item, dict) and item.get("status") == "FAILED":
+                series_id = None
+                meta = item.get("meta")
+                if isinstance(meta, dict):
+                    series_id = meta.get("series_id") or meta.get("ticker")
+                failed_list.append(series_id or label)
+
     age_seconds = _age_seconds(generated_at)
 
     return {
@@ -105,6 +117,8 @@ def build_system_health(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "failed_series": failed_total,
         "total_series": series_total,
         "blocks": blocks,
+        "history_state_available": state_paths.HISTORY_STATE_PATH.exists(),
+        "failed_series_list": failed_list,
     }
 
 

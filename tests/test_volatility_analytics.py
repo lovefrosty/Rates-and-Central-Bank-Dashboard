@@ -12,6 +12,8 @@ def _entry(
     change_1m=None,
     change_6m=None,
     last_week=None,
+    last_month=None,
+    last_6m=None,
     start_of_year=None,
 ):
     meta = {}
@@ -27,6 +29,10 @@ def _entry(
         meta["6m_change_pct"] = change_6m
     if last_week is not None:
         meta["last_week"] = last_week
+    if last_month is not None:
+        meta["last_month"] = last_month
+    if last_6m is not None:
+        meta["last_6m"] = last_6m
     if start_of_year is not None:
         meta["start_of_year"] = start_of_year
     return {
@@ -56,9 +62,11 @@ def test_values_propagate():
                 change_1m=3.0,
                 change_6m=4.0,
                 last_week=17.5,
+                last_month=17.0,
+                last_6m=16.0,
                 start_of_year=20.0,
             ),
-            "move": _entry(95.0, change_1d=-1.0, last_week=94.0, start_of_year=100.0),
+            "move": _entry(95.0, change_1d=-1.0, last_week=94.0, last_month=93.0, last_6m=90.0, start_of_year=100.0),
             "gvz": _entry(14.0),
             "ovx": _entry(28.0),
         }
@@ -73,6 +81,7 @@ def test_values_propagate():
     assert out["changes_pct"]["vix"]["1d_pct"] == 1.0
     assert out["changes_pct"]["vix"]["5d_pct"] == 2.0
     assert out["anchors"]["vix"]["last_week"] == 17.5
+    assert out["anchors"]["vix"]["last_6m"] == 16.0
     assert out["anchors"]["vix"]["start_of_year"] == 20.0
 
 

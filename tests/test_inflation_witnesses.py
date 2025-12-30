@@ -56,6 +56,8 @@ def test_yoy_calculation():
     out = build_inflation_witnesses(raw)
     assert out["cpi_headline_yoy_pct"] == pytest.approx(5.0)
     assert out["cpi_core_yoy_pct"] == pytest.approx(10.0)
+    assert out["inflation_proxy"]["cpi_headline_yoy"]["type"] == "CPI_YoY"
+    assert out["inflation_proxy"]["cpi_core_yoy"]["type"] == "Core_CPI"
 
 
 def test_writer_preserves_other_blocks(tmp_path):

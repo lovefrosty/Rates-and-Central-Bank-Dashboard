@@ -25,15 +25,17 @@ def _snapshots(item: Dict[str, Any]) -> Dict[str, Any]:
     meta = item.get("meta", {}) if isinstance(item, dict) else {}
     current = meta.get("current", item.get("value"))
     last_week = meta.get("last_week")
+    last_month = meta.get("last_month")
+    last_6m = meta.get("last_6m")
     start_of_year = meta.get("start_of_year")
     change_1m = meta.get("1m_change")
-    last_month = None
-    if current is not None and change_1m is not None:
+    if last_month is None and current is not None and change_1m is not None:
         last_month = current - change_1m
     return {
         "current": current,
         "last_week": last_week,
         "last_month": last_month,
+        "last_6m": last_6m,
         "start_of_year": start_of_year,
     }
 
@@ -41,7 +43,8 @@ def _snapshots(item: Dict[str, Any]) -> Dict[str, Any]:
 def build_yield_curve_block(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     duration = raw_state.get("duration", {})
     tenors: list[str] = []
-    lines = {"start_of_year": [], "last_month": [], "last_week": [], "current": []}
+    lines = {"start_of_year": [], "last_6m": [], "last_month": [], "last_week": [], "current": []}
+    changes_bps = {"change_1w": [], "change_1m": [], "change_6m": [], "change_ytd": []}
     rows = []
     for tenor, key in TENOR_ORDER:
         item = duration.get(key, {}) if isinstance(duration, dict) else {}
@@ -49,26 +52,37 @@ def build_yield_curve_block(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         current = snapshots["current"]
         last_week = snapshots["last_week"]
         last_month = snapshots["last_month"]
+        last_6m = snapshots["last_6m"]
         start_of_year = snapshots["start_of_year"]
         tenors.append(tenor)
         lines["start_of_year"].append(start_of_year)
+        lines["last_6m"].append(last_6m)
         lines["last_month"].append(last_month)
         lines["last_week"].append(last_week)
         lines["current"].append(current)
-        weekly_change_bps = None
-        if current is not None and last_week is not None:
-            weekly_change_bps = (current - last_week) * 100
+        change_1w = None if current is None or last_week is None else (current - last_week) * 100
+        change_1m = None if current is None or last_month is None else (current - last_month) * 100
+        change_6m = None if current is None or last_6m is None else (current - last_6m) * 100
+        change_ytd = None if current is None or start_of_year is None else (current - start_of_year) * 100
+        changes_bps["change_1w"].append(change_1w)
+        changes_bps["change_1m"].append(change_1m)
+        changes_bps["change_6m"].append(change_6m)
+        changes_bps["change_ytd"].append(change_ytd)
         rows.append(
             {
                 "tenor": tenor,
                 "start_of_year": start_of_year,
+                "last_6m": last_6m,
                 "last_month": last_month,
                 "last_week": last_week,
                 "current": current,
-                "weekly_change_bps": weekly_change_bps,
+                "weekly_change_bps": change_1w,
+                "change_1m_bps": change_1m,
+                "change_6m_bps": change_6m,
+                "change_ytd_bps": change_ytd,
             }
         )
-    return {"tenors": tenors, "lines": lines, "table_rows": rows}
+    return {"tenors": tenors, "lines": lines, "table_rows": rows, "changes_bps": changes_bps}
 
 
 def write_daily_state(

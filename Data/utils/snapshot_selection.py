@@ -42,24 +42,69 @@ def select_anchor(points: list[Tuple[datetime, float]], anchor_date: datetime) -
     return None
 
 
+def select_anchor_within(
+    points: list[Tuple[datetime, float]],
+    anchor_date: datetime,
+    tolerance_days: int,
+) -> Snapshot:
+    """Select the closest observation to anchor_date within tolerance_days."""
+    candidate = select_anchor(points, anchor_date)
+    if candidate is None:
+        return None
+    delta_days = abs((candidate[0] - anchor_date).days)
+    if delta_days > tolerance_days:
+        return None
+    return candidate
+
+
 def select_snapshots(
     points: list[Tuple[datetime, float]],
     current_year: Optional[int] = None,
 ) -> Dict[str, Snapshot]:
-    """Select start_of_year, last_week, and current from sorted observations."""
+    """Select anchor snapshots using consistent calendar rules."""
     cleaned = _clean_points(points)
     if not cleaned:
-        return {"current": None, "last_week": None, "start_of_year": None}
+        return {
+            "current": None,
+            "last_week": None,
+            "last_month": None,
+            "last_6m": None,
+            "start_of_year": None,
+        }
     current_date, _ = cleaned[-1]
     current = select_anchor(cleaned, current_date)
-    last_week = select_anchor(cleaned, current_date - timedelta(days=7))
     if current_year is None:
         current_year = current_date.year
-    start_anchor = datetime(current_year, 1, 1, tzinfo=current_date.tzinfo)
-    start_of_year = select_anchor(cleaned, start_anchor)
+
+    start_of_year = None
+    for dt, value in cleaned:
+        if dt.year == current_year:
+            start_of_year = (dt, value)
+            break
+
+    deltas = []
+    for idx in range(1, len(cleaned)):
+        delta_days = (cleaned[idx][0] - cleaned[idx - 1][0]).days
+        if delta_days >= 0:
+            deltas.append(delta_days)
+    median_delta = None
+    if deltas:
+        deltas.sort()
+        median_delta = deltas[len(deltas) // 2]
+    high_freq = median_delta is not None and median_delta <= 7
+
+    last_week = None
+    if high_freq and len(cleaned) >= 6:
+        last_week = cleaned[-6]
+
+    last_month = select_anchor_within(cleaned, current_date - timedelta(days=30), tolerance_days=45)
+    last_6m = select_anchor_within(cleaned, current_date - timedelta(days=183), tolerance_days=75)
+
     return {
         "current": current,
         "last_week": last_week,
+        "last_month": last_month,
+        "last_6m": last_6m,
         "start_of_year": start_of_year,
     }
 
@@ -80,6 +125,7 @@ def anchor_window_start(reference_date: datetime, padding_days: int = 10) -> dat
         reference_date,
         reference_date - timedelta(days=7),
         reference_date - timedelta(days=30),
+        reference_date - timedelta(days=183),
         datetime(reference_date.year, 1, 1, tzinfo=reference_date.tzinfo),
     ]
     earliest = min(anchors)

@@ -85,16 +85,20 @@ def _fetch_fx_series(ticker: str) -> Dict[str, Any]:
             raise ValueError("no observations")
         current_date, current_value = current
         last_week = snapshots["last_week"]
+        last_month = snapshots["last_month"]
+        last_6m = snapshots["last_6m"]
         start_of_year = snapshots["start_of_year"]
         prior_1d = select_prior(points, current_date, days=1)
         prior_5d = select_prior(points, current_date, days=5)
-        prior_1m = select_prior(points, current_date, days=30)
-        prior_6m = select_prior(points, current_date, days=180)
+        prior_1m = last_month
+        prior_6m = last_6m
 
         meta = {
             "series_id": ticker,
             "start_of_year": None if start_of_year is None else start_of_year[1],
             "last_week": None if last_week is None else last_week[1],
+            "last_month": None if last_month is None else last_month[1],
+            "last_6m": None if last_6m is None else last_6m[1],
             "current": current_value,
             "1d_change_pct": _pct_change(current_value, prior_1d),
             "5d_change_pct": _pct_change(current_value, prior_5d),
@@ -102,6 +106,8 @@ def _fetch_fx_series(ticker: str) -> Dict[str, Any]:
             "6m_change_pct": _pct_change(current_value, prior_6m),
             "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
             "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
+            "as_of_last_month": _format_date(None if last_month is None else last_month[0]),
+            "as_of_last_6m": _format_date(None if last_6m is None else last_6m[0]),
             "as_of_current": _format_date(current_date),
         }
         return _ingestion_object(value=current_value, status="OK", source="yfinance", extra=meta)
@@ -133,3 +139,48 @@ def fetch_gbpusd() -> Dict[str, Any]:
 def fetch_usdcad() -> Dict[str, Any]:
     """Fetch USDCAD (yfinance: CAD=X)."""
     return _fetch_fx_series("CAD=X")
+
+
+def fetch_audusd() -> Dict[str, Any]:
+    """Fetch AUDUSD (yfinance: AUDUSD=X)."""
+    return _fetch_fx_series("AUDUSD=X")
+
+
+def fetch_nzdusd() -> Dict[str, Any]:
+    """Fetch NZDUSD (yfinance: NZDUSD=X)."""
+    return _fetch_fx_series("NZDUSD=X")
+
+
+def fetch_usdnok() -> Dict[str, Any]:
+    """Fetch USDNOK (yfinance: NOK=X)."""
+    return _fetch_fx_series("NOK=X")
+
+
+def fetch_usdmxn() -> Dict[str, Any]:
+    """Fetch USDMXN (yfinance: MXN=X)."""
+    return _fetch_fx_series("MXN=X")
+
+
+def fetch_usdzar() -> Dict[str, Any]:
+    """Fetch USDZAR (yfinance: ZAR=X)."""
+    return _fetch_fx_series("ZAR=X")
+
+
+def fetch_usdchf() -> Dict[str, Any]:
+    """Fetch USDCHF (yfinance: CHF=X)."""
+    return _fetch_fx_series("CHF=X")
+
+
+def fetch_usdcnh() -> Dict[str, Any]:
+    """Fetch USDCNH (yfinance: CNH=X) with USDCNY fallback."""
+    data = _fetch_fx_series("CNH=X")
+    if isinstance(data, dict) and data.get("status") == "OK":
+        return data
+    fallback = _fetch_fx_series("CNY=X")
+    if isinstance(fallback, dict):
+        fallback["meta"]["series_id"] = "CNY=X"
+        fallback["error"] = "CNH=X unavailable; used CNY=X proxy"
+        fallback["source"] = "yfinance"
+        if fallback.get("status") != "OK":
+            fallback["status"] = "FAILED"
+    return fallback

@@ -41,6 +41,16 @@ def _yoy_pct(current: Optional[float], year_ago: Optional[float]) -> Optional[fl
     return (current / year_ago - 1.0) * 100
 
 
+def _inflation_proxy_meta(current: Optional[float], year_ago: Optional[float]) -> Dict[str, Any]:
+    confidence = "MEDIUM" if current is not None and year_ago is not None else "LOW"
+    return {
+        "type": "CPI_YoY",
+        "orientation": "backward-looking",
+        "confidence": confidence,
+        "fallback_used": False,
+    }
+
+
 def build_inflation_level(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     entry = _get_entry(raw_state, "cpi_level")
     current = _get_current(entry)
@@ -49,6 +59,7 @@ def build_inflation_level(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "cpi_level_current": current,
         "cpi_yoy_pct": _yoy_pct(current, year_ago),
+        "inflation_proxy": _inflation_proxy_meta(current, year_ago),
         "data_quality": {
             "cpi_level": _quality(status, current, year_ago),
         },

@@ -21,6 +21,8 @@ def test_build_system_health_counts():
     out = build_system_health(raw_state)
     assert out["blocks"]["Rates"]["status"] == "PARTIAL"
     assert out["blocks"]["Liquidity"]["status"] == "FAILED"
+    assert "history_state_available" in out
+    assert "failed_series_list" in out
 
 
 def test_writer_preserves_other_blocks(tmp_path):
