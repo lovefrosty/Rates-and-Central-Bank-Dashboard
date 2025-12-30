@@ -51,15 +51,29 @@ def test_raw_state_includes_labor_market(monkeypatch):
 def test_yoy_calculations():
     raw = {
         "labor_market": {
-            "unrate": {"value": 4.0, "status": "OK", "meta": {"current": 4.0, "year_ago": 3.5}},
-            "jolts_openings": {"value": 8.0, "status": "OK", "meta": {"current": 8.0, "year_ago": 10.0}},
-            "eci": {"value": 110.0, "status": "OK", "meta": {"current": 110.0, "year_ago": 100.0}},
+            "unrate": {
+                "value": 4.0,
+                "status": "OK",
+                "meta": {"current": 4.0, "year_ago": 3.5, "last_week": 3.9, "start_of_year": 4.2},
+            },
+            "jolts_openings": {
+                "value": 8.0,
+                "status": "OK",
+                "meta": {"current": 8.0, "year_ago": 10.0, "last_week": 8.1, "start_of_year": 9.0},
+            },
+            "eci": {
+                "value": 110.0,
+                "status": "OK",
+                "meta": {"current": 110.0, "year_ago": 100.0, "last_week": 109.0, "start_of_year": 105.0},
+            },
         }
     }
     out = build_labor_market(raw)
     assert out["unrate_yoy_change"] == pytest.approx(0.5)
     assert out["jolts_yoy_change"] == pytest.approx(-2.0)
     assert out["eci_yoy_pct"] == pytest.approx(10.0)
+    assert out["anchors"]["unrate"]["last_week"] == pytest.approx(3.9)
+    assert out["anchors"]["eci"]["start_of_year"] == pytest.approx(105.0)
 
 
 def test_writer_preserves_other_blocks(tmp_path):

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from Data import (
     fetch_credit_spreads,
+    fetch_fx,
     fetch_global_policy,
     fetch_inflation,
     fetch_inflation_witnesses,
@@ -24,6 +25,7 @@ from Data import (
     fetch_yields,
 )
 from Signals import state_paths
+from Signals.json_utils import write_json
 from Signals.validate import validate_raw_state
 
 
@@ -143,6 +145,14 @@ def build_raw_state() -> Dict:
         "boj_stance": _safe_call(fetch_global_policy.fetch_boj_stance_manual),
     }
 
+    fx = {
+        # Parallel addition: fx
+        "usdjpy": _safe_call(fetch_fx.fetch_usdjpy),
+        "eurusd": _safe_call(fetch_fx.fetch_eurusd),
+        "gbpusd": _safe_call(fetch_fx.fetch_gbpusd),
+        "usdcad": _safe_call(fetch_fx.fetch_usdcad),
+    }
+
     policy_curve = {
         "curve": _safe_call(fetch_policy_curve.fetch_policy_curve),
     }
@@ -164,6 +174,7 @@ def build_raw_state() -> Dict:
         "labor_market": labor_market,
         "credit_spreads": credit_spreads,
         "global_policy": global_policy,
+        "fx": fx,
         "policy_curve": policy_curve,  # ← APPEND HERE
         "duration": duration,
         "volatility": volatility,
@@ -178,9 +189,7 @@ def build_raw_state() -> Dict:
 def write_raw_state(path: str | os.PathLike = state_paths.RAW_STATE_PATH) -> None:
     raw = build_raw_state()
     path = os.fspath(path)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(raw, f, indent=2, sort_keys=True)
+    write_json(path, raw)
     from Analytics.policy_witnesses import write_daily_state as write_policy_witnesses
     from Analytics.inflation_real_rates import write_daily_state as write_inflation_real_rates
     from Analytics.volatility_analytics import write_daily_state as write_volatility
@@ -191,6 +200,8 @@ def write_raw_state(path: str | os.PathLike = state_paths.RAW_STATE_PATH) -> Non
     from Analytics.labor_market import write_daily_state as write_labor_market
     from Analytics.credit_transmission import write_daily_state as write_credit_transmission
     from Analytics.global_policy_alignment import write_daily_state as write_global_policy_alignment
+    from Analytics.fx_panel import write_daily_state as write_fx_panel
+    from Analytics.system_health import write_daily_state as write_system_health
     from Analytics.policy_futures_curve import write_daily_state as write_policy_futures_curve
     from Signals.resolve_policy import resolve_policy as resolve_policy_spot
     from Signals.resolve_policy_curve import resolve_policy_curve
@@ -207,6 +218,8 @@ def write_raw_state(path: str | os.PathLike = state_paths.RAW_STATE_PATH) -> Non
     write_labor_market()
     write_credit_transmission()
     write_global_policy_alignment()
+    write_fx_panel()
+    write_system_health()
     write_policy_futures_curve()
     resolve_policy_spot()
     resolve_policy_curve()

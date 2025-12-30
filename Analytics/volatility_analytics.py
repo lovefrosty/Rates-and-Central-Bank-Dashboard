@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, Optional
 
 from Signals import state_paths
+from Signals.json_utils import write_json
 
 
 def _get_entry(raw_state: Dict[str, Any], key: str) -> Dict[str, Any]:
@@ -45,6 +46,35 @@ def _build_changes(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
     }
 
 
+def _snapshot_values(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
+    current = meta.get("current", entry.get("value"))
+    last_week = meta.get("last_week")
+    start_of_year = meta.get("start_of_year")
+    change_1m_pct = meta.get("1m_change_pct")
+    last_month = None
+    if current is not None and change_1m_pct not in (None, -100):
+        last_month = current / (1 + (change_1m_pct / 100))
+    return {
+        "current": None if current is None else float(current),
+        "last_week": None if last_week is None else float(last_week),
+        "last_month": None if last_month is None else float(last_month),
+        "start_of_year": None if start_of_year is None else float(start_of_year),
+    }
+
+
+def _ratio_snapshots(numerator: Dict[str, Optional[float]], denominator: Dict[str, Optional[float]]) -> Dict[str, Optional[float]]:
+    ratios: Dict[str, Optional[float]] = {}
+    for key in ("current", "last_week", "last_month", "start_of_year"):
+        num_val = numerator.get(key)
+        denom_val = denominator.get(key)
+        if num_val is None or denom_val in (None, 0):
+            ratios[key] = None
+        else:
+            ratios[key] = num_val / denom_val
+    return ratios
+
+
 def _stress_origin_read(move_roc: Optional[float], vix_roc: Optional[float]) -> str:
     if move_roc is None or vix_roc is None:
         return "Low or indeterminate stress"
@@ -81,6 +111,11 @@ def build_volatility_block(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     if ovx_value is not None and vix_value not in (None, 0):
         ovx_vix_ratio = ovx_value / vix_value
 
+    vix_snapshots = _snapshot_values(vix_entry)
+    move_snapshots = _snapshot_values(move_entry)
+    gvz_snapshots = _snapshot_values(gvz_entry)
+    ovx_snapshots = _snapshot_values(ovx_entry)
+
     return {
         "vix": vix_value,
         "move": move_value,
@@ -93,6 +128,17 @@ def build_volatility_block(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "vix_5d_roc": vix_roc,
         "move_5d_roc": move_roc,
         "stress_origin_read": _stress_origin_read(move_roc, vix_roc),
+        "anchors": {
+            "vix": vix_snapshots,
+            "move": move_snapshots,
+            "gvz": gvz_snapshots,
+            "ovx": ovx_snapshots,
+        },
+        "ratio_anchors": {
+            "move_vix": _ratio_snapshots(move_snapshots, vix_snapshots),
+            "gvz_vix": _ratio_snapshots(gvz_snapshots, vix_snapshots),
+            "ovx_vix": _ratio_snapshots(ovx_snapshots, vix_snapshots),
+        },
         "changes_pct": {
             "vix": _build_changes(vix_entry),
             "move": _build_changes(move_entry),
@@ -120,6 +166,5 @@ def write_daily_state(
         if not isinstance(daily, dict):
             daily = {}
     daily["volatility"] = build_volatility_block(raw_state)
-    daily_path.parent.mkdir(parents=True, exist_ok=True)
-    daily_path.write_text(json.dumps(daily, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(daily_path, daily)
     return daily

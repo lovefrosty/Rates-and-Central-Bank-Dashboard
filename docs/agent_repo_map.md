@@ -29,7 +29,9 @@
   - `Analytics/liquidity_analytics.py`
   - `Analytics/credit_transmission.py`
   - `Analytics/global_policy_alignment.py`
-  - `Analytics/yield_curve_panel.py`
+  - `Analytics/fx_panel.py`
+  - `Analytics/system_health.py`
+  - `Analytics/yield_curve_analytics.py`
 - Resolvers (examples):
   - `Signals/resolve_policy.py`
   - `Signals/resolve_policy_curve.py`

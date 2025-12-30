@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, Optional
 
 from Signals import state_paths
+from Signals.json_utils import write_json
 
 
 def _get_block(daily_state: Dict[str, Any], key: str) -> Dict[str, Any]:
@@ -108,5 +109,5 @@ def resolve_liquidity_curve(daily_state_path: Path | str = state_paths.DAILY_STA
     }
 
     daily_state["liquidity_curve"] = liquidity_curve
-    path.write_text(json.dumps(daily_state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(path, daily_state)
     return daily_state

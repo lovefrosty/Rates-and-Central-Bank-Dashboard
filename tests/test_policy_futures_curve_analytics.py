@@ -32,6 +32,16 @@ def test_implied_rate_math():
     assert contract["weekly_change_bps"] == pytest.approx((1.0 - 0.8) * 100)
 
 
+def test_change_vs_now_bps():
+    raw_state = {
+        "policy": {"effr": {"value": 5.0, "status": "OK", "meta": {"current": 5.0}}},
+        "policy_futures": {"zq": {"ZQZ25.CBT": _entry(99.0)}},
+    }
+    out = build_policy_futures_curve(raw_state)
+    contract = out["contracts"][0]
+    assert contract["change_vs_now_bps"] == pytest.approx((1.0 - 5.0) * 100)
+
+
 def test_writer_merges_blocks(tmp_path):
     raw_state = {
         "policy_futures": {

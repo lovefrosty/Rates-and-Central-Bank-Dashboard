@@ -63,6 +63,7 @@ def test_write_raw_state(tmp_path):
         "labor_market",
         "credit_spreads",
         "global_policy",
+        "fx",
         "policy_curve",
         "duration",
         "volatility",
@@ -91,6 +92,8 @@ def test_write_raw_state(tmp_path):
     assert credit_spreads_keys.issubset(set(j["credit_spreads"].keys()))
     global_policy_keys = {"ecb_deposit_rate", "usd_index", "dxy", "boj_stance"}
     assert global_policy_keys.issubset(set(j["global_policy"].keys()))
+    fx_keys = {"usdjpy", "eurusd", "gbpusd", "usdcad"}
+    assert fx_keys.issubset(set(j["fx"].keys()))
     volatility_keys = {"vix", "move", "gvz", "ovx"}
     assert volatility_keys.issubset(set(j["volatility"].keys()))
 
@@ -136,4 +139,4 @@ def test_output_is_pretty_and_stable(tmp_path):
     content = path.read_text()
     data = json.loads(content)
     expected = json.dumps(data, indent=2, sort_keys=True)
-    assert content == expected
+    assert content.rstrip("\n") == expected

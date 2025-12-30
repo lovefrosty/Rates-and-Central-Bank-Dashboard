@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from Signals import state_paths
+from Signals.json_utils import write_json
 
 
 @dataclass(frozen=True)
@@ -130,9 +131,7 @@ def resolve_yield_curve(
     daily_state["yield_curve"] = merged
 
     daily_state_path.parent.mkdir(parents=True, exist_ok=True)
-    daily_state_path.write_text(
-        json.dumps(daily_state, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    write_json(daily_state_path, daily_state)
     return daily_state
 
 

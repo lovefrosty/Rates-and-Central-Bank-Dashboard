@@ -1,9 +1,11 @@
 """Labor market analytics from raw_state.json."""
+# NOTE: Evidence-only block. No resolver consumes this data in V1.
 from pathlib import Path
 import json
 from typing import Any, Dict, Optional
 
 from Signals import state_paths
+from Signals.json_utils import write_json
 
 
 def _get_entry(raw_state: Dict[str, Any], key: str) -> Dict[str, Any]:
@@ -24,6 +26,23 @@ def _get_year_ago(entry: Dict[str, Any]) -> Optional[float]:
     meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
     value = meta.get("year_ago")
     return None if value is None else float(value)
+
+
+def _snapshots(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
+    current = meta.get("current", entry.get("value"))
+    last_week = meta.get("last_week")
+    start_of_year = meta.get("start_of_year")
+    change_1m = meta.get("1m_change")
+    last_month = None
+    if current is not None and change_1m is not None:
+        last_month = current - change_1m
+    return {
+        "current": None if current is None else float(current),
+        "last_week": None if last_week is None else float(last_week),
+        "last_month": None if last_month is None else float(last_month),
+        "start_of_year": None if start_of_year is None else float(start_of_year),
+    }
 
 
 def _quality(status: Optional[str], current: Optional[float], year_ago: Optional[float]) -> str:
@@ -58,6 +77,9 @@ def build_labor_market(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     unrate_year_ago = _get_year_ago(unrate_entry)
     jolts_year_ago = _get_year_ago(jolts_entry)
     eci_year_ago = _get_year_ago(eci_entry)
+    unrate_snapshots = _snapshots(unrate_entry)
+    jolts_snapshots = _snapshots(jolts_entry)
+    eci_snapshots = _snapshots(eci_entry)
 
     return {
         "unrate_current": unrate_current,
@@ -66,6 +88,11 @@ def build_labor_market(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "jolts_yoy_change": _yoy_change(jolts_current, jolts_year_ago),
         "eci_index_current": eci_current,
         "eci_yoy_pct": _yoy_pct(eci_current, eci_year_ago),
+        "anchors": {
+            "unrate": unrate_snapshots,
+            "jolts_openings": jolts_snapshots,
+            "eci": eci_snapshots,
+        },
         "data_quality": {
             "unrate": _quality(unrate_entry.get("status"), unrate_current, unrate_year_ago),
             "jolts_openings": _quality(jolts_entry.get("status"), jolts_current, jolts_year_ago),
@@ -86,6 +113,5 @@ def write_daily_state(
         if not isinstance(daily, dict):
             daily = {}
     daily["labor_market"] = build_labor_market(raw_state)
-    daily_path.parent.mkdir(parents=True, exist_ok=True)
-    daily_path.write_text(json.dumps(daily, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(daily_path, daily)
     return daily

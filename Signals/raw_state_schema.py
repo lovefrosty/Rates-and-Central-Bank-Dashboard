@@ -11,6 +11,7 @@ EXPECTED_TOP_LEVEL_KEYS: Set[str] = {
     "labor_market",
     "credit_spreads",
     "global_policy",
+    "fx",
     "policy_curve",
     "duration",
     "volatility",
@@ -25,6 +26,7 @@ EXPECTED_SECTION_KEYS = {
     "labor_market": {"unrate", "jolts_openings", "eci"},
     "credit_spreads": {"ig_oas", "hy_oas"},
     "global_policy": {"ecb_deposit_rate", "usd_index", "dxy", "boj_stance"},
+    "fx": {"usdjpy", "eurusd", "gbpusd", "usdcad"},
     "policy_curve": {"curve"},
     "duration": {
         "y3m_nominal",

@@ -1,4 +1,4 @@
-"""Policy futures (ZQ) data fetchers."""
+"""FX data fetchers (yfinance)."""
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Tuple
 
@@ -69,8 +69,13 @@ def _format_date(dt: Optional[datetime]) -> Optional[str]:
     return dt.date().isoformat()
 
 
-def fetch_zq_contract(ticker: str) -> Dict[str, Any]:
-    """Fetch a ZQ futures contract price snapshot via yfinance."""
+def _pct_change(current: float, prior: Optional[Tuple[datetime, float]]) -> Optional[float]:
+    if prior is None or prior[1] in (None, 0):
+        return None
+    return (current - prior[1]) / prior[1] * 100
+
+
+def _fetch_fx_series(ticker: str) -> Dict[str, Any]:
     try:
         frame = yfinance_provider.fetch_price_history(ticker, period="1y")
         points = _extract_points(frame.to_dict("records"))
@@ -81,29 +86,50 @@ def fetch_zq_contract(ticker: str) -> Dict[str, Any]:
         current_date, current_value = current
         last_week = snapshots["last_week"]
         start_of_year = snapshots["start_of_year"]
-        month_ago = select_prior(points, current_date, days=30)
-        change_1m = None if month_ago is None else current_value - month_ago[1]
+        prior_1d = select_prior(points, current_date, days=1)
+        prior_5d = select_prior(points, current_date, days=5)
+        prior_1m = select_prior(points, current_date, days=30)
+        prior_6m = select_prior(points, current_date, days=180)
+
         meta = {
-            "ticker": ticker,
+            "series_id": ticker,
             "start_of_year": None if start_of_year is None else start_of_year[1],
             "last_week": None if last_week is None else last_week[1],
             "current": current_value,
-            "1m_change": change_1m,
+            "1d_change_pct": _pct_change(current_value, prior_1d),
+            "5d_change_pct": _pct_change(current_value, prior_5d),
+            "1m_change_pct": _pct_change(current_value, prior_1m),
+            "6m_change_pct": _pct_change(current_value, prior_6m),
             "as_of_start_of_year": _format_date(None if start_of_year is None else start_of_year[0]),
             "as_of_last_week": _format_date(None if last_week is None else last_week[0]),
             "as_of_current": _format_date(current_date),
         }
-        return _ingestion_object(
-            value=current_value,
-            status="OK",
-            source="yfinance",
-            extra=meta,
-        )
+        return _ingestion_object(value=current_value, status="OK", source="yfinance", extra=meta)
     except Exception as exc:
         return _ingestion_object(
             value=None,
             status="FAILED",
             source="yfinance",
-            error=str(exc),
-            extra={"ticker": ticker},
+            error=f"{ticker} fetch failed: {exc}",
+            extra={"series_id": ticker},
         )
+
+
+def fetch_usdjpy() -> Dict[str, Any]:
+    """Fetch USDJPY (yfinance: JPY=X)."""
+    return _fetch_fx_series("JPY=X")
+
+
+def fetch_eurusd() -> Dict[str, Any]:
+    """Fetch EURUSD (yfinance: EURUSD=X)."""
+    return _fetch_fx_series("EURUSD=X")
+
+
+def fetch_gbpusd() -> Dict[str, Any]:
+    """Fetch GBPUSD (yfinance: GBPUSD=X)."""
+    return _fetch_fx_series("GBPUSD=X")
+
+
+def fetch_usdcad() -> Dict[str, Any]:
+    """Fetch USDCAD (yfinance: CAD=X)."""
+    return _fetch_fx_series("CAD=X")

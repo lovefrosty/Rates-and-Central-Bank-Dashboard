@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, Optional, Tuple
 
 from Signals import state_paths
+from Signals.json_utils import write_json
 
 
 def _get_entry(raw_state: Dict[str, Any], section: str, key: str) -> Dict[str, Any]:
@@ -96,6 +97,5 @@ def write_daily_state(
         if not isinstance(daily, dict):
             daily = {}
     daily["credit_transmission"] = build_credit_transmission(raw_state)
-    daily_path.parent.mkdir(parents=True, exist_ok=True)
-    daily_path.write_text(json.dumps(daily, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(daily_path, daily)
     return daily

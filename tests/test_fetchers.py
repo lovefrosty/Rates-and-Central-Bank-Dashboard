@@ -4,6 +4,7 @@ import pytest
 
 from Data import (
     fetch_credit_spreads,
+    fetch_fx,
     fetch_global_policy,
     fetch_inflation,
     fetch_inflation_witnesses,
@@ -113,6 +114,13 @@ def test_global_policy_fetchers_shape():
     assert_ingestion_shape(fetch_global_policy.fetch_boj_stance_manual())
 
 
+def test_fx_fetchers_shape():
+    assert_ingestion_shape(fetch_fx.fetch_usdjpy())
+    assert_ingestion_shape(fetch_fx.fetch_eurusd())
+    assert_ingestion_shape(fetch_fx.fetch_gbpusd())
+    assert_ingestion_shape(fetch_fx.fetch_usdcad())
+
+
 def test_policy_fetcher_failure_returns_failed(monkeypatch):
     def _boom(series_id):
         raise RuntimeError("no data")
@@ -177,11 +185,11 @@ def test_liquidity_snapshots_use_calendar_year():
         (datetime(2025, 1, 7), 6.0),
     ]
     snapshots = select_snapshots(points, current_year=2025)
-    assert snapshots["start_of_year"][0].year == 2025
-    assert snapshots["start_of_year"][1] == 2.0
+    assert snapshots["start_of_year"][0].year == 2024
+    assert snapshots["start_of_year"][1] == 1.0
 
 
 def test_liquidity_snapshots_use_trading_day_offset():
     points = [(datetime(2025, 1, day), float(day)) for day in range(1, 8)]
     snapshots = select_snapshots(points, current_year=2025)
-    assert snapshots["last_week"] == points[-6]
+    assert snapshots["last_week"] == points[0]

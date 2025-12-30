@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from Data.utils.fred_provider import _try_fred_http, _try_openbb_fred
-from Data.utils.snapshot_selection import select_prior, select_snapshots
+from Data.utils.snapshot_selection import anchor_window_start_iso, select_prior, select_snapshots
 
 _FRED_SERIES = {
     "y3m_nominal": "DGS3MO",
@@ -84,7 +84,7 @@ def _format_date(dt: Optional[datetime]) -> Optional[str]:
 
 
 def _fetch_fred_series(series_id: str) -> Tuple[float, Dict[str, Any], str, str]:
-    start_date = (datetime.now(timezone.utc) - timedelta(days=400)).date().isoformat()
+    start_date = anchor_window_start_iso(datetime.now(timezone.utc), padding_days=10)
     try:
         df = _try_openbb_fred(series_id, start_date=start_date)
         status = "OK"

@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, List, Tuple
 
 from Signals import state_paths
+from Signals.json_utils import write_json
 
 
 TENOR_ORDER: List[Tuple[str, str]] = [
@@ -20,19 +21,38 @@ TENOR_ORDER: List[Tuple[str, str]] = [
 ]
 
 
+def _snapshots(item: Dict[str, Any]) -> Dict[str, Any]:
+    meta = item.get("meta", {}) if isinstance(item, dict) else {}
+    current = meta.get("current", item.get("value"))
+    last_week = meta.get("last_week")
+    start_of_year = meta.get("start_of_year")
+    change_1m = meta.get("1m_change")
+    last_month = None
+    if current is not None and change_1m is not None:
+        last_month = current - change_1m
+    return {
+        "current": current,
+        "last_week": last_week,
+        "last_month": last_month,
+        "start_of_year": start_of_year,
+    }
+
+
 def build_yield_curve_block(raw_state: Dict[str, Any]) -> Dict[str, Any]:
     duration = raw_state.get("duration", {})
     tenors: list[str] = []
-    lines = {"start_of_year": [], "last_week": [], "current": []}
+    lines = {"start_of_year": [], "last_month": [], "last_week": [], "current": []}
     rows = []
     for tenor, key in TENOR_ORDER:
         item = duration.get(key, {}) if isinstance(duration, dict) else {}
-        meta = item.get("meta", {}) if isinstance(item, dict) else {}
-        current = meta.get("current", item.get("value"))
-        last_week = meta.get("last_week")
-        start_of_year = meta.get("start_of_year")
+        snapshots = _snapshots(item)
+        current = snapshots["current"]
+        last_week = snapshots["last_week"]
+        last_month = snapshots["last_month"]
+        start_of_year = snapshots["start_of_year"]
         tenors.append(tenor)
         lines["start_of_year"].append(start_of_year)
+        lines["last_month"].append(last_month)
         lines["last_week"].append(last_week)
         lines["current"].append(current)
         weekly_change_bps = None
@@ -42,6 +62,7 @@ def build_yield_curve_block(raw_state: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "tenor": tenor,
                 "start_of_year": start_of_year,
+                "last_month": last_month,
                 "last_week": last_week,
                 "current": current,
                 "weekly_change_bps": weekly_change_bps,
@@ -62,6 +83,5 @@ def write_daily_state(
         if not isinstance(daily, dict):
             daily = {}
     daily["yield_curve"] = build_yield_curve_block(raw_state)
-    daily_path.parent.mkdir(parents=True, exist_ok=True)
-    daily_path.write_text(json.dumps(daily, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(daily_path, daily)
     return daily

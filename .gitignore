@@ -11,6 +11,7 @@ venv/
 # Runtime outputs
 signals/raw_state.json
 signals/daily_state.json
+signals/history_state.json
 
 # OS noise
 .DS_Store

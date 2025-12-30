@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, Optional
 
 from Signals import state_paths
+from Signals.json_utils import write_json
 
 
 def _get_entry(raw_state: Dict[str, Any], section: str, key: str) -> Dict[str, Any]:
@@ -28,6 +29,23 @@ def _get_change_1m(entry: Dict[str, Any]) -> Optional[float]:
     meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
     change = meta.get("1m_change")
     return None if change is None else float(change)
+
+
+def _snapshots(entry: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    meta = entry.get("meta", {}) if isinstance(entry, dict) else {}
+    current = meta.get("current", entry.get("value"))
+    last_week = meta.get("last_week")
+    start_of_year = meta.get("start_of_year")
+    change_1m = meta.get("1m_change")
+    last_month = None
+    if current is not None and change_1m is not None:
+        last_month = current - change_1m
+    return {
+        "current": None if current is None else float(current),
+        "last_week": None if last_week is None else float(last_week),
+        "last_month": None if last_month is None else float(last_month),
+        "start_of_year": None if start_of_year is None else float(start_of_year),
+    }
 
 
 def _get_cpi_yoy(raw_state: Dict[str, Any]) -> Optional[float]:
@@ -100,6 +118,15 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         real_status,
     )
     cpi_yoy_pct = _get_cpi_yoy(raw_state)
+    nominal_snapshots = _snapshots(nominal_entry)
+    real_snapshots = _snapshots(real_entry)
+    breakeven_snapshots = {}
+    for key in ("current", "last_week", "last_month", "start_of_year"):
+        nominal_anchor = nominal_snapshots.get(key)
+        real_anchor = real_snapshots.get(key)
+        breakeven_snapshots[key] = (
+            None if nominal_anchor is None or real_anchor is None else nominal_anchor - real_anchor
+        )
 
     return {
         "nominal_10y": nominal_value,
@@ -108,6 +135,26 @@ def build_inflation_real_rates(raw_state: Dict[str, Any]) -> Dict[str, Any]:
         "breakeven_10y_change": breakeven_change,
         "cpi_yoy_pct": cpi_yoy_pct,
         "real_rate_spread": breakeven_value,
+        "real_10y_anchors": real_snapshots,
+        "breakeven_10y_anchors": breakeven_snapshots,
+        "real_yields": [
+            {
+                "tenor": "10Y",
+                "current": real_snapshots.get("current"),
+                "last_week": real_snapshots.get("last_week"),
+                "last_month": real_snapshots.get("last_month"),
+                "start_of_year": real_snapshots.get("start_of_year"),
+            }
+        ],
+        "breakevens": [
+            {
+                "tenor": "10Y",
+                "current": breakeven_snapshots.get("current"),
+                "last_week": breakeven_snapshots.get("last_week"),
+                "last_month": breakeven_snapshots.get("last_month"),
+                "start_of_year": breakeven_snapshots.get("start_of_year"),
+            }
+        ],
         "driver_read": _driver_read(
             nominal_change,
             real_change,
@@ -132,6 +179,5 @@ def write_daily_state(
         if not isinstance(daily, dict):
             daily = {}
     daily["inflation_real_rates"] = build_inflation_real_rates(raw_state)
-    daily_path.parent.mkdir(parents=True, exist_ok=True)
-    daily_path.write_text(json.dumps(daily, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(daily_path, daily)
     return daily

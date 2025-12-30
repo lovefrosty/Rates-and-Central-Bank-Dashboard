@@ -1,6 +1,7 @@
 """Data package for ingestion modules."""
 from . import (
     fetch_credit_spreads,
+    fetch_fx,
     fetch_global_policy,
     fetch_inflation,
     fetch_inflation_witnesses,
